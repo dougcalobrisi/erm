@@ -38,12 +38,12 @@ jobs:
           echo "version=$PY_VER" >> "$GITHUB_OUTPUT"
           echo "All version sources at: $PY_VER"
 
-      - name: Check tag doesn't already exist
+      - name: Check tag doesn't already exist on remote
         if: ${{ inputs.create_tag && !inputs.dry_run }}
         run: |
           TAG="v${{ steps.version.outputs.version }}"
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "::error::Tag $TAG already exists. Bump the version first."
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG already exists on origin. Bump the version first."
             exit 1
           fi
           echo "Tag $TAG is available"
@@ -82,10 +82,14 @@ jobs:
           EXPECTED=$(get_pyproject_version)
           for artifact in dist/*; do
             base="$(basename "$artifact")"
-            if ! echo "$base" | grep -q "$EXPECTED"; then
-              echo "::error::Stale artifact: $base (expected version $EXPECTED)"
-              exit 1
-            fi
+            case "$base" in
+              "erm-$EXPECTED.tar.gz"|"erm-$EXPECTED-"*.whl)
+                ;;
+              *)
+                echo "::error::Stale artifact: $base (expected version $EXPECTED)"
+                exit 1
+                ;;
+            esac
           done
           echo "All artifacts match version $EXPECTED"
 

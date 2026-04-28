@@ -33,11 +33,15 @@ fi
 EXPECTED=$(get_pyproject_version)
 for artifact in dist/*; do
     base="$(basename "$artifact")"
-    if ! echo "$base" | grep -q "$EXPECTED"; then
-        error "Stale artifact: $base (expected version $EXPECTED)"
-        echo "  Run: make build"
-        exit 1
-    fi
+    case "$base" in
+        "erm-$EXPECTED.tar.gz"|"erm-$EXPECTED-"*.whl)
+            ;;
+        *)
+            error "Stale artifact: $base (expected version $EXPECTED)"
+            echo "  Run: make build"
+            exit 1
+            ;;
+    esac
 done
 
 info "Validating packages with twine..."

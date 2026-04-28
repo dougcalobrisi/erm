@@ -78,8 +78,15 @@ success "Versions updated to $NEW_VERSION"
 
 # Re-lock if uv.lock exists.
 if [ -f "$PROJECT_ROOT/uv.lock" ]; then
+    if ! command -v uv >/dev/null 2>&1; then
+        error "uv.lock exists but 'uv' is not on PATH; refusing to leave a stale lockfile."
+        exit 1
+    fi
     info "Updating uv.lock..."
-    (cd "$PROJECT_ROOT" && uv lock 2>/dev/null || true)
+    if ! (cd "$PROJECT_ROOT" && uv lock); then
+        error "Failed to update uv.lock"
+        exit 1
+    fi
 fi
 
 if [ "$CREATE_COMMIT" = true ]; then
