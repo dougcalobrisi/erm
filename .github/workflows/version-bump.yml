@@ -10,7 +10,6 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
 
 env:
   VERSION: ${{ inputs.version }}
@@ -29,6 +28,11 @@ jobs:
           echo "Version format valid: $VERSION"
 
       - uses: actions/checkout@v6
+        with:
+          ref: main
+          # Need a token that can push to a branch-protected main if you
+          # protect it later; default GITHUB_TOKEN works for unprotected.
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -41,34 +45,10 @@ jobs:
       - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Create branch and bump version
-        run: |
-          BRANCH="chore/bump-version-${VERSION}"
-          git checkout -b "$BRANCH"
-          ./scripts/sync-version.sh "$VERSION" --commit
+      - name: Bump version and commit to main
+        run: ./scripts/sync-version.sh "$VERSION" --commit
 
-      - name: Push branch
-        run: git push origin HEAD
-
-      - name: Create pull request
-        env:
-          GH_TOKEN: ${{ github.token }}
-          ACTOR: ${{ github.actor }}
-        run: |
-          gh pr create \
-            --title "chore: bump version to ${VERSION}" \
-            --body "$(cat <<EOF
-          ## Version Bump to ${VERSION}
-
-          Updates:
-          - \`pyproject.toml\`
-          - \`src/erm/__init__.py\`
-          - \`uv.lock\` (if present)
-
-          After merging, run the [Release workflow](../../actions/workflows/release.yml) to publish to PyPI.
-
-          Triggered by @${ACTOR} via workflow dispatch.
-          EOF
-          )"
+      - name: Push to main
+        run: git push origin HEAD:main
