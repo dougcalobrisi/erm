@@ -1,6 +1,6 @@
 [project]
 name = "erm"
-version = "0.1.0"
+version = "0.1.1"
 description = "Strip disfluencies (um, uh, er, ah, hmm) from spoken audio."
 readme = "README.md"
 requires-python = ">=3.11"
