@@ -29,6 +29,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+build = ["build>=1.2", "twine>=5.0"]
 
 [project.urls]
 Homepage = "https://github.com/dougcalobrisi/erm"

@@ -1,0 +1,125 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (validate without publishing)"
+        required: false
+        type: boolean
+        default: false
+      create_tag:
+        description: "Create git tag + GitHub Release after publish"
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read and verify version
+        id: version
+        run: |
+          source scripts/common.sh
+          PY_VER=$(get_pyproject_version)
+          INIT_VER=$(get_init_version)
+          echo "pyproject.toml version: $PY_VER"
+          echo "__init__.py version:    $INIT_VER"
+          if [ "$PY_VER" != "$INIT_VER" ]; then
+            echo "::error::Version mismatch: pyproject=$PY_VER init=$INIT_VER"
+            echo "Run 'make sync-version VERSION=x.y.z' to synchronize."
+            exit 1
+          fi
+          echo "version=$PY_VER" >> "$GITHUB_OUTPUT"
+          echo "All version sources at: $PY_VER"
+
+      - name: Check tag doesn't already exist
+        if: ${{ inputs.create_tag && !inputs.dry_run }}
+        run: |
+          TAG="v${{ steps.version.outputs.version }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG already exists. Bump the version first."
+            exit 1
+          fi
+          echo "Tag $TAG is available"
+
+  ci:
+    needs: preflight
+    uses: ./.github/workflows/ci.yml
+
+  publish-python:
+    needs: [preflight, ci]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Build package
+        run: ./scripts/build-python.sh
+
+      - name: Validate package
+        run: uv run --with twine -- twine check dist/*
+
+      - name: Verify built artifacts match version
+        run: |
+          source scripts/common.sh
+          EXPECTED=$(get_pyproject_version)
+          for artifact in dist/*; do
+            base="$(basename "$artifact")"
+            if ! echo "$base" | grep -q "$EXPECTED"; then
+              echo "::error::Stale artifact: $base (expected version $EXPECTED)"
+              exit 1
+            fi
+          done
+          echo "All artifacts match version $EXPECTED"
+
+      - name: Publish to PyPI (Trusted Publishing)
+        if: ${{ !inputs.dry_run }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Dry run summary
+        if: ${{ inputs.dry_run }}
+        run: echo "Dry run - would publish erm ${{ needs.preflight.outputs.version }} to PyPI"
+
+  create-release:
+    needs: [preflight, publish-python]
+    if: ${{ inputs.create_tag && !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Create and push tag
+        run: |
+          TAG="v${{ needs.preflight.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v${{ needs.preflight.outputs.version }}"
+          name: "Release v${{ needs.preflight.outputs.version }}"
+          prerelease: ${{ contains(needs.preflight.outputs.version, 'a') || contains(needs.preflight.outputs.version, 'b') || contains(needs.preflight.outputs.version, 'rc') }}
+          generate_release_notes: true
+          body: |
+            **PyPI**: [erm ${{ needs.preflight.outputs.version }}](https://pypi.org/project/erm/${{ needs.preflight.outputs.version }}/)

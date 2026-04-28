@@ -6,6 +6,8 @@ faster-whisper or librosa installed. Heavy deps (`librosa`,
 `faster_whisper`) are imported lazily inside the functions that need them.
 """
 
+__version__ = "0.1.0"
+
 from .acoustic import is_sustained_vowel
 from .asr import VERBATIM_PROMPT, transcribe
 from .audio import find_quiet_region, load_audio_mono
@@ -30,6 +32,7 @@ from .refine import refine_boundaries
 from .validate import validate_output
 
 __all__ = [
+    "__version__",
     "Cut",
     "DEFAULT_FILLERS",
     "VERBATIM_PROMPT",
