@@ -1,0 +1,30 @@
+[project]
+name = "erm"
+version = "0.1.0"
+description = "Strip disfluencies (um, uh, er, ah, hmm) from spoken audio."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Doug Calobrisi", email = "doug@calobrisi.com" }]
+dependencies = [
+    "faster-whisper>=1.0.3",
+    "numpy>=1.26",
+    "librosa>=0.10",
+    "soundfile>=0.12",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+erm = "erm.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+markers = ["slow: tests that need the Whisper model (download required)"]
