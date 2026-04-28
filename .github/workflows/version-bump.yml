@@ -1,0 +1,74 @@
+name: Version Bump
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "New version (PEP 440: 0.2.0 or 0.2.0b1, 0.2.0rc1, 0.2.0a1)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  VERSION: ${{ inputs.version }}
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate version format
+        run: |
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+((a|b|rc)[0-9]+)?$'; then
+            echo "::error::Invalid version: $VERSION"
+            echo "Expected PEP 440: X.Y.Z or X.Y.Z{a,b,rc}N"
+            exit 1
+          fi
+          echo "Version format valid: $VERSION"
+
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create branch and bump version
+        run: |
+          BRANCH="chore/bump-version-${VERSION}"
+          git checkout -b "$BRANCH"
+          ./scripts/sync-version.sh "$VERSION" --commit
+
+      - name: Push branch
+        run: git push origin HEAD
+
+      - name: Create pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          gh pr create \
+            --title "chore: bump version to ${VERSION}" \
+            --body "$(cat <<EOF
+          ## Version Bump to ${VERSION}
+
+          Updates:
+          - \`pyproject.toml\`
+          - \`src/erm/__init__.py\`
+          - \`uv.lock\` (if present)
+
+          After merging, run the [Release workflow](../../actions/workflows/release.yml) to publish to PyPI.
+
+          Triggered by @${ACTOR} via workflow dispatch.
+          EOF
+          )"
