@@ -6,7 +6,7 @@ faster-whisper or librosa installed. Heavy deps (`librosa`,
 `faster_whisper`) are imported lazily inside the functions that need them.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 from .acoustic import is_sustained_vowel
 from .asr import VERBATIM_PROMPT, transcribe
