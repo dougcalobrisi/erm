@@ -18,6 +18,8 @@ def validate_output(
     model_name: str = "medium.en",
     fillers: Iterable[str] = DEFAULT_FILLERS,
     duration_tolerance_ms: float = 50.0,
+    device: str = "auto",
+    compute_type: str = "auto",
 ) -> dict:
     """Run the deterministic checks described in the plan. Returns a report dict.
 
@@ -57,7 +59,10 @@ def validate_output(
         "tolerance_ms": duration_tolerance_ms,
     }
 
-    words, _ = transcribe(output_path, model_name=model_name)
+    words, _ = transcribe(
+        output_path, model_name=model_name,
+        device=device, compute_type=compute_type,
+    )
     filler_set = {f.lower() for f in fillers}
     surviving = [
         {"text": w.text, "start": w.start, "end": w.end}

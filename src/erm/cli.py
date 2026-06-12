@@ -33,6 +33,14 @@ def _build_remove_parser() -> argparse.ArgumentParser:
     p.add_argument("-o", "--output", help="Output audio file (.wav).")
     p.add_argument("--model", default="medium.en",
                    help="faster-whisper model (default: medium.en).")
+    p.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto",
+                   help="Compute device for transcription. 'auto' (default) "
+                        "uses the GPU when available and silently falls back to "
+                        "CPU if the CUDA runtime libraries can't be loaded. "
+                        "Force 'cpu' to skip the GPU entirely.")
+    p.add_argument("--compute-type", dest="compute_type", default="auto",
+                   help="faster-whisper compute type (e.g. int8, float16). "
+                        "'auto' (default) lets the backend choose.")
     p.add_argument("--fillers", default=",".join(sorted(DEFAULT_FILLERS)),
                    help="Comma-separated filler word list.")
     p.add_argument("--search-ms", type=float, default=60.0)
@@ -115,6 +123,10 @@ def _build_validate_parser() -> argparse.ArgumentParser:
     p.add_argument("output")
     p.add_argument("--cuts", help="Cut list JSON written by `remove`.")
     p.add_argument("--model", default="medium.en")
+    p.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto",
+                   help="Compute device for transcription (see `erm --help`).")
+    p.add_argument("--compute-type", dest="compute_type", default="auto",
+                   help="faster-whisper compute type (e.g. int8, float16).")
     p.add_argument("--report", help="Write report JSON to this path.")
     return p
 
@@ -165,7 +177,10 @@ def _cmd_remove(args: argparse.Namespace) -> int:
             render_input = str(denoised_path)
 
     print(f"[1/4] transcribing with {args.model}...", file=sys.stderr)
-    words, duration = transcribe(analysis_input, model_name=args.model)
+    words, duration = transcribe(
+        analysis_input, model_name=args.model,
+        device=args.device, compute_type=args.compute_type,
+    )
 
     word_cuts = find_fillers(words, fillers)
     print(f"[2/4] found {len(word_cuts)} transcribed filler(s) in {duration:.2f}s",
@@ -326,6 +341,7 @@ def _cmd_validate(args: argparse.Namespace) -> int:
         print(f"      report: {args.report}", file=sys.stderr)
     report = validate_output(
         args.input, args.output, args.cuts, model_name=args.model,
+        device=args.device, compute_type=args.compute_type,
     )
     text = json.dumps(report, indent=2)
     print(text)

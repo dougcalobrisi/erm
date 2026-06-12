@@ -22,6 +22,32 @@ source .venv/bin/activate
 pip install -e '.[dev]'
 ```
 
+### Transcription device (GPU vs CPU)
+
+Transcription runs on CPU by default and needs no extra setup. If you have an
+NVIDIA GPU, faster-whisper can use it — but only when the CUDA runtime libraries
+(`libcublas`, `libcudnn`) are installed. A machine with an NVIDIA GPU and driver
+but no CUDA runtime is the common case that produces:
+
+```
+RuntimeError: Library libcublas.so.12 is not found or cannot be loaded
+```
+
+`erm` handles this automatically: with the default `--device auto`, if the GPU
+can't be loaded it prints a warning and falls back to CPU, so transcription
+still completes. You have two ways to make it explicit:
+
+- **Force CPU** (no warning, skips the GPU probe): `erm input.wav --device cpu`
+- **Enable the GPU** by installing the CUDA wheels into the same environment:
+
+  ```sh
+  pip install nvidia-cublas-cu12 nvidia-cudnn-cu12
+  ```
+
+  faster-whisper's CUDA backend needs CUDA 12 / cuDNN 9. See the
+  [faster-whisper GPU notes](https://github.com/SYSTRAN/faster-whisper#gpu)
+  for details.
+
 ## Usage
 
 ```sh
@@ -99,6 +125,8 @@ floor dB).
 | Flag | Default | Notes |
 |------|---------|-------|
 | `--model` | `medium.en` | Any faster-whisper model. `small.en` faster; `large-v3` more accurate. |
+| `--device` | `auto` | `auto` / `cpu` / `cuda`. `auto` uses the GPU when available and falls back to CPU if the CUDA runtime can't be loaded (see [Transcription device](#transcription-device-gpu-vs-cpu)). |
+| `--compute-type` | `auto` | faster-whisper compute type (e.g. `int8`, `float16`). `auto` lets the backend choose. |
 | `--fillers` | `ah,er,erm,hmm,mhm,mm,uh,uh-huh,um` | Comma-separated stems. Elongations matched dynamically. |
 | `--detect-gaps` / `--no-detect-gaps` | on | Run gap + intra-word + overlong detectors. |
 | `--gap-min-ms` | `350` | Minimum inter-word gap to scan for fillers. |
