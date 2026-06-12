@@ -91,3 +91,18 @@ def test_render_gapless_is_shorter_than_source(tmp_path):
     assert out_dur < CLIP_DURATION_S - 0.2
     # Close to kept total (allowing for crossfade overlap shaving a little).
     assert out_dur == pytest.approx((1.3) + (3.0 - 1.7), abs=0.1)
+
+
+def test_render_min_gap_floor_without_injection_still_renders(tmp_path):
+    # A floor set but no gaps to inject routes through the gap-aware path (which
+    # trims crossfades instead of injecting). It must still render a valid file
+    # of roughly the kept-total duration.
+    src = tmp_path / "in.wav"
+    out = tmp_path / "out.wav"
+    _write_wav(src)
+
+    keep = [(0.0, 1.3), (1.7, 3.0)]
+    render(src, keep, out, min_gap_s=0.05)
+
+    assert out.exists()
+    assert ffprobe_duration(out) == pytest.approx((1.3) + (3.0 - 1.7), abs=0.1)

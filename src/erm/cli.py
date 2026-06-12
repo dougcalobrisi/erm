@@ -400,7 +400,8 @@ def _cmd_remove(args: argparse.Namespace) -> int:
                max_crossfade_ms=args.max_crossfade_ms,
                crossfade_factor=args.crossfade_factor,
                words=words,
-               gap_inserts=gap_inserts)
+               gap_inserts=gap_inserts,
+               min_gap_s=args.min_gap_ms / 1000.0)
 
     current = render_target
     if needs_post_denoise:

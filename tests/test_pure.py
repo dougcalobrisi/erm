@@ -27,7 +27,7 @@ from erm import (
     refine_boundaries,
 )
 from erm import ffmpeg_ops
-from erm.ffmpeg_ops import _mute_filter, _splice_crossfade_s, render
+from erm.ffmpeg_ops import _keep_fades, _mute_filter, _splice_crossfade_s, render
 
 
 # ---------- normalize_word -------------------------------------------------
@@ -530,15 +530,19 @@ def test_pad_cuts_zero_silence_edge_gets_no_padding():
     assert padded[0].end == pytest.approx(0.40)
 
 
-def test_pad_cuts_never_inverts_a_cut():
-    # Pads big enough to cross would invert the cut; that cut is left as-is.
+def test_pad_cuts_min_pad_cannot_exceed_voiced_core():
+    # Even a huge min_pad can't pad past the voiced core: each side's pad is
+    # capped by the silence that side actually has, so the padded cut always
+    # still contains [raw.start, raw.end] and the filler is never spared.
     raw = [Cut(0.30, 0.32, "um")]   # 20ms voiced core
     refined = [Cut(0.10, 0.50, "um")]
     padded = pad_cuts(refined, raw, 1.0, 0.300, 0.400)  # huge min_pad
-    # min(left_sil=0.20, clamp(0.20,0.3,0.4)=0.3) = 0.20 -> start 0.30;
-    # min(right_sil=0.18, clamp(0.18,0.3,0.4)=0.3) = 0.18 -> end 0.32.
-    # That doesn't invert here, so verify the non-inverting result is sane.
-    assert padded[0].end > padded[0].start
+    # left pad = min(left_sil=0.20, clamp(0.20,0.3,0.4)=0.3) = 0.20 -> start 0.30
+    # right pad = min(right_sil=0.18, clamp(0.18,0.3,0.4)=0.3) = 0.18 -> end 0.32
+    assert padded[0].start == pytest.approx(0.30)
+    assert padded[0].end == pytest.approx(0.32)
+    assert padded[0].start <= raw[0].start
+    assert padded[0].end >= raw[0].end
 
 
 def test_pad_cuts_collapse_leaves_cut_unchanged():
@@ -644,6 +648,38 @@ def test_mute_filter_multiple_ranges_joined_with_plus():
 
 def test_mute_filter_empty_is_blank():
     assert _mute_filter([]) == ""
+
+
+# ---------- _keep_fades min-gap floor clamp --------------------------------
+
+# surviving_gap at the splice is the silence left on each side of it:
+#   (keep[0].end - prev_word.end) + (next_word.start - keep[1].start)
+# = (1.0 - 0.95) + (1.05 - 1.0) = 0.10
+_FLOOR_KEEP = [(0.0, 1.0), (1.0, 2.0)]
+_FLOOR_WORDS = [_w("a", 0.5, 0.95), _w("b", 1.05, 1.5)]
+_FLOOR_FADE_KW = dict(
+    crossfade_ms=None, min_crossfade_ms=50.0,
+    max_crossfade_ms=120.0, crossfade_factor=0.15,
+)
+
+
+def test_keep_fades_min_gap_floor_trims_crossfade():
+    # A crossfade overlaps the survivors, eating into the 0.10s surviving gap;
+    # with a 0.08s floor the fade is trimmed so the post-overlap gap stays >=
+    # the floor — and the trim actually engages (it would have dipped under).
+    base = _keep_fades(_FLOOR_KEEP, _FLOOR_WORDS, **_FLOOR_FADE_KW)
+    clamped = _keep_fades(
+        _FLOOR_KEEP, _FLOOR_WORDS, min_gap_s=0.08, **_FLOOR_FADE_KW
+    )
+    assert 0.10 - clamped[0] >= 0.08 - 1e-9
+    assert clamped[0] < base[0]
+
+
+def test_keep_fades_min_gap_zero_matches_unclamped():
+    # The default (no floor) leaves fades byte-for-byte unchanged.
+    assert _keep_fades(_FLOOR_KEEP, _FLOOR_WORDS, min_gap_s=0.0,
+                       **_FLOOR_FADE_KW) == _keep_fades(
+        _FLOOR_KEEP, _FLOOR_WORDS, **_FLOOR_FADE_KW)
 
 
 # ---------- render word-room defaults --------------------------------------

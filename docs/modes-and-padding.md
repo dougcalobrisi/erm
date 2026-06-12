@@ -1,7 +1,7 @@
 # Render modes & pause spacing
 
 This documents the `--mode {remove,silence}` switch and the two `remove`-mode
-spacing knobs (`--pad-pause-factor`, `--min-gap-ms`) added in 0.2.0. Detection,
+spacing knobs (`--pad-pause-factor`, `--min-gap-ms`) added in 0.3.0. Detection,
 refinement, denoise, and room-tone are shared across modes — only the
 post-`cuts` render differs.
 
@@ -100,17 +100,26 @@ makes the injected duration exact. Injected silence is bare silence, **not**
 room tone — the room-tone overlay fills it with the natural floor afterward,
 exactly like the `silence`-mode holes.
 
-The default render path is gated behind `if gap_inserts:` and is otherwise
-**untouched** — when `gap_inserts` is `None` or empty (every existing caller and
-every default run), the verbatim original code runs, producing byte-identical
-output.
+The default render path is gated behind `if gap_inserts or (min_gap_s > 0 and
+len(keep_ranges) > 1)` and is otherwise **untouched** — when no gap is injected
+*and* no floor is set (every existing caller and every default run), the verbatim
+original code runs, producing byte-identical output.
 
-### Caveat
+### Honoring the floor on gapless joins too
 
-`surviving_gap` is measured from silence only and ignores the crossfade overlap
-on the gapless joins around the injected one, so a gap just above the floor can
-end up a few ms under it after crossfade. The injected gaps themselves use
-`concat`, so their duration is exact. Acceptable for v1.
+A `concat` join lands the injected silence exactly, but a gapless `acrossfade`
+join *overlaps* the survivors by `fade`, eating that much out of the silence
+between the flanking words — so a splice whose natural pause was just above the
+floor could finish a few ms under it. `_keep_fades` closes this: whenever a
+floor is set it caps each surviving fade at `surviving_gap - min_gap_s`, where
+`surviving_gap = lhs_room + rhs_room` is the same per-side silence it already
+measures for the word-protection clamp (and the same quantity `inject_min_gaps`
+compares against). The two enforcement paths therefore agree — splices *below*
+the floor get silence **injected** (`concat`, exact), splices *just above* it
+get their crossfade **trimmed** — so the floor holds at every splice, not only
+the injected ones. Because the floor (`min_gap_s > 0`) also routes the render
+through the gap-aware per-join path, a fade trimmed to zero degrades to a single
+`concat` for that one join instead of disabling crossfades everywhere.
 
 ## Cut-list JSON & validation
 

@@ -165,14 +165,26 @@ def _keep_fades(
     min_crossfade_ms: float,
     max_crossfade_ms: float,
     crossfade_factor: float,
+    min_gap_s: float = 0.0,
 ) -> list[float]:
     """Per-splice crossfade lengths for each keep→keep join.
 
-    Mirrors the per-splice fade computation in `render`'s default path (the
-    same `_splice_crossfade_s` scaling and word-room clamp), returning a list
-    of length ``len(keep_ranges) - 1`` where entry ``i`` is the fade for the
-    join between keep ``i`` and keep ``i+1``. Used only by `_render_with_gaps`
-    — the default path keeps its own inlined copy so its output is untouched.
+    The per-splice fade computation shared by `render`'s default path and
+    `_render_with_gaps` (the same `_splice_crossfade_s` scaling and word-room
+    clamp), returning a list of length ``len(keep_ranges) - 1`` where entry
+    ``i`` is the fade for the join between keep ``i`` and keep ``i+1``.
+
+    When `min_gap_s > 0`, each fade is additionally clamped so it can't pull the
+    two flanking words below the gap floor. A gapless `acrossfade` overlaps the
+    survivors by `fade`, eating that much out of the silence between the words,
+    so the audible gap is ``surviving_gap - fade``; capping ``fade`` at
+    ``surviving_gap - min_gap_s`` keeps that gap ≥ the floor. ``surviving_gap``
+    is ``lhs_room + rhs_room`` — the same per-side silence already measured for
+    the word-protection clamp, and the same quantity `inject_min_gaps` uses, so
+    the two enforcement paths agree: splices below the floor get silence
+    *injected* (a `concat`, no overlap), splices just above it get their
+    crossfade *trimmed* here. With `min_gap_s == 0` (every default run) the
+    clamp is skipped and the fades are byte-for-byte the prior values.
     """
     fades: list[float] = []
     for i in range(1, len(keep_ranges)):
@@ -193,14 +205,18 @@ def _keep_fades(
             )
             lhs_room = splice_lhs - prev_word_end
             rhs_room = next_word_start - splice_rhs
-        fades.append(_splice_crossfade_s(
+        fade = _splice_crossfade_s(
             cut_s, prev_len, next_len,
             crossfade_ms=crossfade_ms,
             min_crossfade_ms=min_crossfade_ms,
             max_crossfade_ms=max_crossfade_ms,
             crossfade_factor=crossfade_factor,
             lhs_room=lhs_room, rhs_room=rhs_room,
-        ))
+        )
+        if min_gap_s > 0 and lhs_room is not None and rhs_room is not None:
+            surviving_gap = lhs_room + rhs_room
+            fade = min(fade, max(0.0, surviving_gap - min_gap_s))
+        fades.append(fade)
     return fades
 
 
@@ -215,6 +231,7 @@ def _render_with_gaps(
     max_crossfade_ms: float,
     crossfade_factor: float,
     words: Sequence[Word] | None,
+    min_gap_s: float = 0.0,
 ) -> None:
     """Render keeps with injected silent gaps, as a linear filtergraph fold.
 
@@ -225,6 +242,10 @@ def _render_with_gaps(
     uses `concat` so the injected duration lands exactly. Injected silence is
     an `anullsrc` matched to the input's sample rate / channel layout (the
     room-tone overlay later fills it with the natural floor).
+
+    `min_gap_s` is forwarded to `_keep_fades` so the surviving (un-injected)
+    crossfades are trimmed to keep their flanking words at or above the floor —
+    the splices that *were* injected already honor it exactly via `concat`.
     """
     fades = _keep_fades(
         keep_ranges, words,
@@ -232,9 +253,19 @@ def _render_with_gaps(
         min_crossfade_ms=min_crossfade_ms,
         max_crossfade_ms=max_crossfade_ms,
         crossfade_factor=crossfade_factor,
+        min_gap_s=min_gap_s,
     )
     sample_rate, channels = _probe_audio_stream(input_path)
-    layout = "stereo" if channels == 2 else "mono"
+    # The injected `anullsrc` must match the real audio's channel layout so
+    # `concat` joins them without a mismatch. Only mono/stereo have an
+    # unambiguous name here; for anything else, fail loudly rather than
+    # mislabel a multichannel mix as stereo and silently corrupt the output.
+    layout = {1: "mono", 2: "stereo"}.get(channels)
+    if layout is None:
+        raise ValueError(
+            f"min-gap injection supports mono/stereo input only; got {channels} "
+            "channels. Re-run without --min-gap-ms, or downmix the input first."
+        )
 
     parts: list[str] = []
     for i, (s, e) in enumerate(keep_ranges):
@@ -301,6 +332,7 @@ def render(
     crossfade_factor: float = 0.10,
     words: Sequence[Word] | None = None,
     gap_inserts: Sequence[tuple[int, float]] | None = None,
+    min_gap_s: float = 0.0,
 ) -> None:
     """Render `keep_ranges` from `input_path` to `output_path` via ffmpeg.
 
@@ -315,20 +347,27 @@ def render(
     A/B testing); when None, the per-splice scaling is used.
 
     `gap_inserts` (a list of ``(after_keep_index, duration_s)``) injects silent
-    gaps at specific splices to honor a minimum-gap floor; when None or empty
-    (every existing caller) the verbatim default render path below runs.
+    gaps at specific splices to honor a minimum-gap floor. `min_gap_s` is that
+    floor; when it is set, the gap-aware path runs even with no injections so
+    the surviving crossfades are trimmed not to pull words below the floor (see
+    `_keep_fades`). With both unset/zero (every default run) the verbatim
+    default render path below runs and the output is byte-identical.
     """
     if not keep_ranges:
         raise ValueError("keep_ranges is empty — output would have no audio")
 
-    if gap_inserts:
+    # Route through the gap-aware path when a gap was injected, or when a floor
+    # is set and there is at least one splice to trim. A single keep has no
+    # splices, so the floor is moot there and the fast path below still applies.
+    if gap_inserts or (min_gap_s > 0 and len(keep_ranges) > 1):
         _render_with_gaps(
-            input_path, keep_ranges, output_path, gap_inserts,
+            input_path, keep_ranges, output_path, gap_inserts or [],
             crossfade_ms=crossfade_ms,
             min_crossfade_ms=min_crossfade_ms,
             max_crossfade_ms=max_crossfade_ms,
             crossfade_factor=crossfade_factor,
             words=words,
+            min_gap_s=min_gap_s,
         )
         return
 
@@ -340,45 +379,18 @@ def render(
         subprocess.run(cmd, check=True, capture_output=True)
         return
 
-    fades_s: list[float] = []
-    for i in range(1, len(keep_ranges)):
-        cut_s = keep_ranges[i][0] - keep_ranges[i - 1][1]
-        prev_len = keep_ranges[i - 1][1] - keep_ranges[i - 1][0]
-        next_len = keep_ranges[i][1] - keep_ranges[i][0]
-
-        # Word-aware clamp: a crossfade extends ~cf/2 into the audio on
-        # *each* side of the splice. Measure the room back to the nearest
-        # real word on each side so the fade never attenuates one.
-        #
-        # When a side has no word (e.g. a splice past the last word), fall
-        # back to that fragment's own boundary — meaning "no word to protect
-        # here," so this clamp imposes nothing beyond the fragment-length cap
-        # below. Defaulting to the splice point instead would make the room 0,
-        # collapsing this splice's fade and — because render needs *every*
-        # fade > 0 — disabling crossfades for the whole output.
-        lhs_room = rhs_room = None
-        if words is not None:
-            splice_lhs = keep_ranges[i - 1][1]
-            splice_rhs = keep_ranges[i][0]
-            prev_word_end = max(
-                (w.end for w in words if w.end <= splice_lhs),
-                default=keep_ranges[i - 1][0],
-            )
-            next_word_start = min(
-                (w.start for w in words if w.start >= splice_rhs),
-                default=keep_ranges[i][1],
-            )
-            lhs_room = splice_lhs - prev_word_end
-            rhs_room = next_word_start - splice_rhs
-
-        fades_s.append(_splice_crossfade_s(
-            cut_s, prev_len, next_len,
-            crossfade_ms=crossfade_ms,
-            min_crossfade_ms=min_crossfade_ms,
-            max_crossfade_ms=max_crossfade_ms,
-            crossfade_factor=crossfade_factor,
-            lhs_room=lhs_room, rhs_room=rhs_room,
-        ))
+    # Per-splice crossfade lengths. The word-aware clamp inside `_keep_fades`
+    # measures the room back to the nearest real word on each side so a fade
+    # never attenuates one; when a side has no word (e.g. a splice past the
+    # last word) it falls back to that fragment's own boundary, imposing
+    # nothing beyond the fragment-length cap.
+    fades_s = _keep_fades(
+        keep_ranges, words,
+        crossfade_ms=crossfade_ms,
+        min_crossfade_ms=min_crossfade_ms,
+        max_crossfade_ms=max_crossfade_ms,
+        crossfade_factor=crossfade_factor,
+    )
 
     parts: list[str] = []
     for i, (s, e) in enumerate(keep_ranges):
