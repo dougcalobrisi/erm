@@ -121,3 +121,52 @@ def test_dry_run_without_acoustic_detectors_still_cuts_transcribed_filler(
     )
     assert rc == 0
     assert payload["cuts"], "the transcribed 'um' alone should yield a cut"
+
+
+def test_dry_run_default_payload_is_remove_mode(tmp_path, monkeypatch):
+    # Backward-compat: the default run reports remove mode with no injected gap,
+    # and time_saved_s equals the raw cut total (injected == 0).
+    _, payload = _run_dry_run(tmp_path, monkeypatch)
+    assert payload["mode"] == "remove"
+    assert payload["injected_gap_s"] == pytest.approx(0.0)
+    cut_total = sum(c["end"] - c["start"] for c in payload["cuts"])
+    assert payload["time_saved_s"] == pytest.approx(cut_total)
+
+
+def test_dry_run_silence_mode_preserves_timing_in_payload(tmp_path, monkeypatch):
+    rc, payload = _run_dry_run(
+        tmp_path, monkeypatch, extra_args=("--mode", "silence")
+    )
+    assert rc == 0
+    assert payload["mode"] == "silence"
+    # No timeline shrink in silence mode; muted_s carries the removed span total.
+    assert payload["time_saved_s"] == pytest.approx(0.0)
+    assert payload["injected_gap_s"] == pytest.approx(0.0)
+    assert payload["muted_s"] > 0.0
+    assert payload["cuts"], "silence mode still detects the filler to mute"
+
+
+def test_dry_run_min_gap_injects_and_nets_out_time_saved(tmp_path, monkeypatch):
+    # A large floor forces silence injection at the splice around the cut um;
+    # injected_gap_s > 0 and time_saved_s is the net (saved - injected).
+    rc, payload = _run_dry_run(
+        tmp_path, monkeypatch, extra_args=("--min-gap-ms", "800")
+    )
+    assert rc == 0
+    assert payload["mode"] == "remove"
+    assert payload["injected_gap_s"] > 0.0
+    cut_total = sum(c["end"] - c["start"] for c in payload["cuts"])
+    assert payload["time_saved_s"] == pytest.approx(
+        cut_total - payload["injected_gap_s"]
+    )
+
+
+def test_dry_run_padding_removes_less_than_default(tmp_path, monkeypatch):
+    # Pause-proportional padding retains some of the snapped silence, so the
+    # padded run cuts strictly less than the default (factor 0) run.
+    _, default_payload = _run_dry_run(tmp_path, monkeypatch)
+    _, padded_payload = _run_dry_run(
+        tmp_path, monkeypatch,
+        extra_args=("--pad-pause-factor", "1.0", "--pad-max-ms", "200"),
+    )
+    assert padded_payload["time_saved_s"] <= default_payload["time_saved_s"]

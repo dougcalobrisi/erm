@@ -6,7 +6,7 @@ faster-whisper or librosa installed. Heavy deps (`librosa`,
 `faster_whisper`) are imported lazily inside the functions that need them.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 from .acoustic import is_sustained_vowel
 from .asr import VERBATIM_PROMPT, transcribe
@@ -24,10 +24,16 @@ from .ffmpeg_ops import (
     ffprobe_duration,
     overlay_room_tone,
     render,
+    render_silenced,
 )
 from .fillers import DEFAULT_FILLERS, find_fillers, is_filler, normalize_word
 from .models import Cut, Word
-from .ranges import invert_to_keep_ranges, merge_close_cuts
+from .ranges import (
+    inject_min_gaps,
+    invert_to_keep_ranges,
+    merge_close_cuts,
+    pad_cuts,
+)
 from .refine import refine_boundaries
 from .validate import validate_output
 
@@ -46,6 +52,7 @@ __all__ = [
     "ffprobe_duration",
     "find_fillers",
     "find_quiet_region",
+    "inject_min_gaps",
     "invert_to_keep_ranges",
     "is_filler",
     "is_sustained_vowel",
@@ -54,8 +61,10 @@ __all__ = [
     "merge_close_cuts",
     "normalize_word",
     "overlay_room_tone",
+    "pad_cuts",
     "refine_boundaries",
     "render",
+    "render_silenced",
     "transcribe",
     "validate_output",
 ]

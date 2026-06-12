@@ -95,14 +95,39 @@ When `-o` / `--json` are omitted, output paths are written next to the input as
    `--merge-gap-ms` are collapsed into one — a 40ms surviving fragment
    between two cuts gets eaten by the surrounding crossfades and would
    otherwise blurp.
-5. **Render.** ffmpeg `atrim` + `acrossfade` renders the kept segments. Each
-   splice's crossfade length scales with that splice's cut size:
-   `clamp(min, cut_ms * factor, max)`. Crossfades are also clamped so they
-   never reach back across a real word boundary.
+5. **Render.** In `remove` mode (default), ffmpeg `atrim` + `acrossfade`
+   renders the kept segments. Each splice's crossfade length scales with that
+   splice's cut size: `clamp(min, cut_ms * factor, max)`. Crossfades are also
+   clamped so they never reach back across a real word boundary. `--mode
+   silence` instead mutes the cut spans in place, preserving the original
+   duration (see [Modes](#modes)).
 6. **Room tone (optional, on by default).** A quiet region of the *original*
    recording is sampled and looped under the output at `--room-tone-level-db`.
    This keeps the noise floor identical everywhere, masking the residual
    noise-floor mismatch at each splice.
+
+## Modes
+
+`--mode` chooses how detected cuts are applied to the audio:
+
+| Mode | Timeline | What happens |
+|------|----------|--------------|
+| `remove` (default) | shrinks | Each cut span is excised and the survivors are spliced together with crossfades. |
+| `silence` | preserved | Each cut span is muted *in place* (a single ffmpeg `volume` pass); the output keeps the input's exact duration. |
+
+Use `silence` when timing must be preserved — A/V sync, multi-track alignment
+(you can't excise one mic without de-syncing the others), or caption/transcript
+timestamps. It removes the *sound* of the filler but leaves a hole of the
+original length.
+
+**`silence` depends on a floor in the hole.** The muted spans are filled by the
+room-tone overlay so the noise floor stays uniform. With `--mode silence
+--no-room-tone --denoise none` the holes are bare digital silence (an audible
+"drop out"); `erm` warns when that combination is used. Keep room tone on (the
+default) for natural-sounding mutes.
+
+`silence` mode ignores `--pad-pause-factor` and `--min-gap-ms` — those only
+shape the splices that `remove` mode creates, and `silence` makes no splices.
 
 ## Denoising
 
@@ -136,13 +161,34 @@ floor dB).
 
 ### Cuts and splices
 
+Two independent knobs control the spacing left behind by a `remove`-mode cut —
+they compose but do different things:
+
+- **`--pad-pause-factor`** retains a *fraction* of the silence that already
+  existed inside a cut (the bit `refine` snapped over). It's context-aware and
+  **never adds time**: a tight mid-sentence "um" with no surrounding silence
+  gets ~0 padding and its flanking words still butt together. Bounded per side
+  by `--pad-min-ms` / `--pad-max-ms` and by the silence that actually exists.
+- **`--min-gap-ms`** *guarantees* at least N ms between the two words flanking a
+  cut, **injecting** silence at the splice when the natural pause is below N.
+  This is what fixes "words too close after cutting an um." It adds a little
+  duration when it engages. The injected silence is filled by the room-tone
+  overlay (bare digital silence if room tone is off — `erm` warns).
+
+The factor shapes how much existing pause survives; the floor puts a hard
+minimum under it.
+
 | Flag | Default | Notes |
 |------|---------|-------|
+| `--mode` | `remove` | `remove` (excise + splice) or `silence` (mute in place, duration preserved). See [Modes](#modes). |
 | `--search-ms` | `60` | How far each endpoint may slide to find a local energy minimum. |
 | `--crossfade-ms` | *(unset)* | Force a fixed crossfade length for every splice. When unset, per-splice scaling is used. |
 | `--min-crossfade-ms` / `--max-crossfade-ms` | `50` / `120` | Floor and ceiling for the per-splice crossfade scaling. |
 | `--crossfade-factor` | `0.15` | `cut_ms * factor`, clamped to `[min, max]`. Higher = smoother but blurrier. |
 | `--merge-gap-ms` | `120` | Merge two cuts whose surviving fragment would be shorter than this. |
+| `--pad-pause-factor` | `0.0` | (`remove` mode) Fraction of each cut's snapped silence to retain. `0` removes the whole cut. Never adds time beyond the cut's own silence. |
+| `--pad-min-ms` / `--pad-max-ms` | `0` / `120` | Lower/upper clamp on the retained pause, per side (ms). |
+| `--min-gap-ms` | `0.0` | (`remove` mode) Guarantee at least this much gap between the words flanking each splice, injecting silence when the natural pause is shorter. `0` injects nothing. |
 
 ### Audio cleanup
 
@@ -172,8 +218,11 @@ erm validate input.wav cleaned.wav --cuts cuts.json
 Runs three deterministic checks:
 
 - **Container sanity** — `ffprobe` reads the output without errors.
-- **Duration math** — `output_duration ≈ input_duration - sum(cut lengths)`,
-  within 50ms.
+- **Duration math** — within 50ms of the per-mode expectation, read from the
+  cut-list JSON's `mode` and `injected_gap_s` fields (both default to
+  `remove` / `0.0` when absent, so older cut lists validate unchanged):
+  - `remove`: `output ≈ input − sum(cut lengths) + injected_gap_s`.
+  - `silence`: `output ≈ input` (nothing is excised; cuts are muted in place).
 - **No-filler invariant** — re-transcribe the output; assert no token in the
   filler set survives.
 
@@ -197,8 +246,12 @@ The suite is split into:
 - `test_pure.py` — pure logic, no heavy imports: filler matching, range
   inversion, boundary refinement, close-cut merging (`merge_close_cuts`),
   the per-word duration bound (`expected_max_word_duration`), room-tone
-  region selection (`find_quiet_region`), and the per-splice crossfade
-  clamp (`_splice_crossfade_s`).
+  region selection (`find_quiet_region`), the per-splice crossfade
+  clamp (`_splice_crossfade_s`), pause-proportional padding (`pad_cuts`),
+  min-gap injection (`inject_min_gaps`), and the mute filter (`_mute_filter`).
+- `test_render_modes.py` — real-ffmpeg checks of `render_silenced` (duration
+  preserved) and `render(..., gap_inserts=...)` (injected gap lands exactly).
+  Skipped automatically when `ffmpeg`/`ffprobe` aren't on PATH.
 - `test_asr_fallback.py` — the CUDA → CPU fallback in `transcribe`, with
   faster-whisper mocked.
 - `test_cli.py` — argument parsing, defaults, and `main()` subcommand

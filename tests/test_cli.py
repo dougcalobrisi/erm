@@ -127,6 +127,32 @@ def test_remove_parser_rejects_unknown_device():
         cli._build_remove_parser().parse_args(["in.wav", "--device", "tpu"])
 
 
+def test_remove_parser_mode_and_spacing_defaults():
+    args = cli._build_remove_parser().parse_args(["in.wav"])
+    assert args.mode == "remove"
+    assert args.pad_pause_factor == pytest.approx(0.0)
+    assert args.pad_min_ms == pytest.approx(0.0)
+    assert args.pad_max_ms == pytest.approx(120.0)
+    assert args.min_gap_ms == pytest.approx(0.0)
+
+
+def test_remove_parser_mode_and_spacing_set():
+    args = cli._build_remove_parser().parse_args(
+        ["in.wav", "--mode", "silence", "--pad-pause-factor", "0.5",
+         "--pad-min-ms", "20", "--pad-max-ms", "200", "--min-gap-ms", "150"]
+    )
+    assert args.mode == "silence"
+    assert args.pad_pause_factor == pytest.approx(0.5)
+    assert args.pad_min_ms == pytest.approx(20.0)
+    assert args.pad_max_ms == pytest.approx(200.0)
+    assert args.min_gap_ms == pytest.approx(150.0)
+
+
+def test_remove_parser_rejects_unknown_mode():
+    with pytest.raises(SystemExit):
+        cli._build_remove_parser().parse_args(["in.wav", "--mode", "mute"])
+
+
 # ---------- validate-parser ------------------------------------------------
 
 

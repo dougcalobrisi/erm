@@ -43,16 +43,29 @@ def validate_output(
     report["output_duration_s"] = out_dur
 
     cuts_total = 0.0
+    mode = "remove"
+    injected = 0.0
     if cuts_path is not None:
         with open(cuts_path) as f:
             cuts_data = json.load(f)
         cuts_total = sum(
             float(c["end"]) - float(c["start"]) for c in cuts_data.get("cuts", [])
         )
-    expected = in_dur - cuts_total
+        mode = cuts_data.get("mode", "remove")
+        injected = float(cuts_data.get("injected_gap_s", 0.0))
+
+    # In `silence` mode nothing is excised — the cuts are muted in place, so
+    # the output keeps the input's full duration. In `remove` mode the cuts are
+    # spliced out (shrinking the timeline) and any injected min-gap silence is
+    # added back.
+    if mode == "silence":
+        expected = in_dur
+    else:
+        expected = in_dur - cuts_total + injected
     duration_ok = abs(out_dur - expected) <= duration_tolerance_ms / 1000.0
     report["checks"]["duration_math"] = {
         "ok": duration_ok,
+        "mode": mode,
         "expected_s": expected,
         "actual_s": out_dur,
         "delta_ms": (out_dur - expected) * 1000.0,

@@ -18,14 +18,16 @@ from erm import (
     expected_max_word_duration,
     find_fillers,
     find_quiet_region,
+    inject_min_gaps,
     invert_to_keep_ranges,
     is_filler,
     merge_close_cuts,
     normalize_word,
+    pad_cuts,
     refine_boundaries,
 )
 from erm import ffmpeg_ops
-from erm.ffmpeg_ops import _splice_crossfade_s, render
+from erm.ffmpeg_ops import _mute_filter, _splice_crossfade_s, render
 
 
 # ---------- normalize_word -------------------------------------------------
@@ -470,6 +472,178 @@ def test_splice_crossfade_word_room_ignored_when_one_side_missing():
         lhs_room=None, rhs_room=0.010,
     )
     assert cf == pytest.approx(0.060)
+
+
+# ---------- pad_cuts -------------------------------------------------------
+
+
+def test_pad_cuts_factor_zero_is_noop():
+    raw = [Cut(0.30, 0.40, "um")]
+    refined = [Cut(0.25, 0.45, "um")]
+    assert pad_cuts(refined, raw, 0.0, 0.0, 0.120) == refined
+
+
+def test_pad_cuts_factor_one_shrinks_to_raw_core():
+    # factor 1 retains ALL the snapped silence (capped by max_pad), so the
+    # padded cut collapses back onto the raw voiced core.
+    raw = [Cut(0.30, 0.40, "um")]
+    refined = [Cut(0.25, 0.45, "um")]  # 50ms snapped on each side
+    padded = pad_cuts(refined, raw, 1.0, 0.0, 0.120)
+    assert padded[0].start == pytest.approx(0.30)
+    assert padded[0].end == pytest.approx(0.40)
+    assert padded[0].word == "um"
+
+
+def test_pad_cuts_max_pad_clamps_retained_pause():
+    raw = [Cut(0.30, 0.40, "um")]
+    refined = [Cut(0.10, 0.60, "um")]  # 200ms snapped each side
+    padded = pad_cuts(refined, raw, 1.0, 0.0, 0.050)  # cap 50ms per side
+    assert padded[0].start == pytest.approx(0.15)  # 0.10 + 0.050
+    assert padded[0].end == pytest.approx(0.55)     # 0.60 - 0.050
+
+
+def test_pad_cuts_min_pad_does_not_exceed_available_silence():
+    # min_pad floor is itself capped by the silence that exists, so a side
+    # with only 20ms of silence retains at most 20ms even if min_pad is 50ms.
+    raw = [Cut(0.30, 0.40, "um")]
+    refined = [Cut(0.28, 0.42, "um")]  # 20ms snapped each side
+    padded = pad_cuts(refined, raw, 0.10, 0.050, 0.120)
+    assert padded[0].start == pytest.approx(0.30)  # retains all 20ms -> raw.start
+    assert padded[0].end == pytest.approx(0.40)
+
+
+def test_pad_cuts_asymmetric_silence():
+    raw = [Cut(0.30, 0.40, "um")]
+    refined = [Cut(0.20, 0.45, "um")]  # 100ms left, 50ms right
+    padded = pad_cuts(refined, raw, 0.5, 0.0, 0.120)
+    assert padded[0].start == pytest.approx(0.25)  # 0.20 + 0.5*0.10
+    assert padded[0].end == pytest.approx(0.425)    # 0.45 - 0.5*0.05
+
+
+def test_pad_cuts_zero_silence_edge_gets_no_padding():
+    # A tight mid-sentence filler the refiner couldn't snap off — no silence
+    # to retain, so the cut is unchanged and its neighbors still butt together.
+    raw = [Cut(0.30, 0.40, "um")]
+    refined = [Cut(0.30, 0.40, "um")]
+    padded = pad_cuts(refined, raw, 1.0, 0.0, 0.120)
+    assert padded[0].start == pytest.approx(0.30)
+    assert padded[0].end == pytest.approx(0.40)
+
+
+def test_pad_cuts_never_inverts_a_cut():
+    # Pads big enough to cross would invert the cut; that cut is left as-is.
+    raw = [Cut(0.30, 0.32, "um")]   # 20ms voiced core
+    refined = [Cut(0.10, 0.50, "um")]
+    padded = pad_cuts(refined, raw, 1.0, 0.300, 0.400)  # huge min_pad
+    # min(left_sil=0.20, clamp(0.20,0.3,0.4)=0.3) = 0.20 -> start 0.30;
+    # min(right_sil=0.18, clamp(0.18,0.3,0.4)=0.3) = 0.18 -> end 0.32.
+    # That doesn't invert here, so verify the non-inverting result is sane.
+    assert padded[0].end > padded[0].start
+
+
+def test_pad_cuts_collapse_leaves_cut_unchanged():
+    # Construct a genuine collapse: voiced core is zero-width, full retention
+    # would push start past end, so the refined cut is kept verbatim.
+    raw = [Cut(0.40, 0.40, "um")]
+    refined = [Cut(0.30, 0.50, "um")]
+    padded = pad_cuts(refined, raw, 1.0, 0.120, 0.120)  # 0.12 each side
+    # start 0.30+0.10(=left_sil capped) ... left_sil=0.10 -> +0.10 = 0.40;
+    # right_sil=0.10 -> -0.10 = 0.40 -> new_end == new_start -> kept unchanged.
+    assert padded[0].start == pytest.approx(0.30)
+    assert padded[0].end == pytest.approx(0.50)
+
+
+def test_pad_cuts_length_mismatch_returns_input_unchanged():
+    raw = [Cut(0.30, 0.40, "um")]
+    refined = [Cut(0.25, 0.45, "um"), Cut(1.0, 1.2, "uh")]
+    assert pad_cuts(refined, raw, 1.0, 0.0, 0.120) == refined
+
+
+# ---------- inject_min_gaps ------------------------------------------------
+
+
+def test_inject_min_gaps_below_floor_inserts_shortfall():
+    # Splice with no surrounding silence (words hug both keep boundaries),
+    # floor 0.15s -> inject exactly 0.15s.
+    keep = [(0.0, 1.0), (1.0, 2.0)]
+    words = [_w("a", 0.5, 1.0), _w("b", 1.0, 1.5)]
+    timeline = inject_min_gaps(keep, words, 0.15)
+    assert timeline == [
+        ("keep", 0.0, 1.0),
+        ("gap", 0.0, pytest.approx(0.15)),
+        ("keep", 1.0, 2.0),
+    ]
+
+
+def test_inject_min_gaps_at_or_above_floor_no_insert():
+    # 0.10s silence on the left + 0.10s on the right = 0.20s surviving > floor.
+    keep = [(0.0, 1.0), (1.0, 2.0)]
+    words = [_w("a", 0.5, 0.90), _w("b", 1.10, 1.5)]
+    timeline = inject_min_gaps(keep, words, 0.15)
+    assert timeline == [("keep", 0.0, 1.0), ("keep", 1.0, 2.0)]
+
+
+def test_inject_min_gaps_zero_floor_keeps_only():
+    keep = [(0.0, 1.0), (1.0, 2.0), (2.0, 3.0)]
+    words = [_w("a", 0.5, 1.0), _w("b", 1.0, 1.5)]
+    assert inject_min_gaps(keep, words, 0.0) == [
+        ("keep", 0.0, 1.0), ("keep", 1.0, 2.0), ("keep", 2.0, 3.0),
+    ]
+
+
+def test_inject_min_gaps_missing_words_use_keep_boundaries():
+    # No words -> surviving_gap defaults to 0 -> inject the full floor.
+    keep = [(0.0, 1.0), (1.0, 2.0)]
+    timeline = inject_min_gaps(keep, [], 0.20)
+    assert timeline == [
+        ("keep", 0.0, 1.0),
+        ("gap", 0.0, pytest.approx(0.20)),
+        ("keep", 1.0, 2.0),
+    ]
+
+
+def test_inject_min_gaps_partial_shortfall():
+    # 0.05s natural pause, floor 0.15s -> inject the 0.10s shortfall only.
+    keep = [(0.0, 1.0), (1.0, 2.0)]
+    words = [_w("a", 0.5, 0.95), _w("b", 1.0, 1.5)]  # 0.05s left, 0 right
+    timeline = inject_min_gaps(keep, words, 0.15)
+    gaps = [item for item in timeline if item[0] == "gap"]
+    assert len(gaps) == 1
+    assert gaps[0][2] == pytest.approx(0.10)
+
+
+def test_inject_min_gaps_first_and_last_splice():
+    # Three keeps, two splices, both below floor -> two gaps interleaved.
+    keep = [(0.0, 1.0), (1.0, 2.0), (2.0, 3.0)]
+    words = [_w("a", 0.5, 1.0), _w("b", 1.0, 2.0), _w("c", 2.0, 2.5)]
+    timeline = inject_min_gaps(keep, words, 0.10)
+    kinds = [item[0] for item in timeline]
+    assert kinds == ["keep", "gap", "keep", "gap", "keep"]
+
+
+def test_inject_min_gaps_empty_keep_ranges():
+    assert inject_min_gaps([], [], 0.15) == []
+
+
+# ---------- _mute_filter ---------------------------------------------------
+
+
+def test_mute_filter_single_range():
+    assert _mute_filter([(1.0, 2.0)]) == (
+        "volume=enable='between(t,1.000000,2.000000)':volume=0"
+    )
+
+
+def test_mute_filter_multiple_ranges_joined_with_plus():
+    flt = _mute_filter([(1.0, 2.0), (3.5, 4.0)])
+    assert flt == (
+        "volume=enable='between(t,1.000000,2.000000)"
+        "+between(t,3.500000,4.000000)':volume=0"
+    )
+
+
+def test_mute_filter_empty_is_blank():
+    assert _mute_filter([]) == ""
 
 
 # ---------- render word-room defaults --------------------------------------
