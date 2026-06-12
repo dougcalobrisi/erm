@@ -192,6 +192,23 @@ The pure helpers (`find_fillers`, `invert_to_keep_ranges`,
 Heavy deps are imported lazily inside `transcribe`, `render`,
 `load_audio_mono`, and `is_sustained_vowel`.
 
+The suite is split into:
+
+- `test_pure.py` — pure logic, no heavy imports: filler matching, range
+  inversion, boundary refinement, close-cut merging (`merge_close_cuts`),
+  the per-word duration bound (`expected_max_word_duration`), room-tone
+  region selection (`find_quiet_region`), and the per-splice crossfade
+  clamp (`_splice_crossfade_s`).
+- `test_asr_fallback.py` — the CUDA → CPU fallback in `transcribe`, with
+  faster-whisper mocked.
+- `test_cli.py` — argument parsing, defaults, and `main()` subcommand
+  routing (`remove` / `validate` / bare-input). The pipeline handlers are
+  monkeypatched, so nothing heavy runs.
+- `test_integration.py` — a golden-path `--dry-run` over a synthesized WAV
+  with a stubbed transcriber, wiring transcription → filler detection →
+  refinement → range inversion → JSON. Gated on `librosa` (the audio
+  loader); skipped automatically if it isn't installed.
+
 ## Out of scope
 
 - Removing `like`, `you know`, `I mean` — too risky for meaning.

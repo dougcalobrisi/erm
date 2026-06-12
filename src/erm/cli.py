@@ -131,6 +131,25 @@ def _build_validate_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _parse_filler_set(spec: str) -> set[str]:
+    """Parse a comma-separated filler list into a normalized set.
+
+    Whitespace is stripped, words are lowercased, blanks dropped, and
+    duplicates collapsed (so ``"Um, um , UH"`` becomes ``{"um", "uh"}``).
+    """
+    return {word.strip().lower() for word in spec.split(",") if word.strip()}
+
+
+def _parse_room_tone_source(value: str) -> tuple[float, float]:
+    """Parse a ``'START-END'`` seconds spec into a ``(start, end)`` pair.
+
+    Raises ``ValueError`` if the spec isn't exactly two dash-separated
+    numbers (the caller turns that into a usage error with exit code 2).
+    """
+    start_s, end_s = (float(part) for part in value.split("-"))
+    return start_s, end_s
+
+
 def _timestamped(input_path: str | Path, suffix: str, ext: str) -> Path:
     """Build a sibling output path: {stem}-{suffix}-{YYYYMMDD-HHMMSS}.{ext}.
 
@@ -143,7 +162,7 @@ def _timestamped(input_path: str | Path, suffix: str, ext: str) -> Path:
 
 
 def _cmd_remove(args: argparse.Namespace) -> int:
-    fillers = {f.strip().lower() for f in args.fillers.split(",") if f.strip()}
+    fillers = _parse_filler_set(args.fillers)
 
     if not args.output and not args.dry_run:
         args.output = str(_timestamped(args.input, "cleaned", "wav"))
@@ -308,7 +327,7 @@ def _cmd_remove(args: argparse.Namespace) -> int:
             tone_start, tone_end = region
         else:
             try:
-                ts, te = (float(x) for x in args.room_tone_source.split("-"))
+                tone_start, tone_end = _parse_room_tone_source(args.room_tone_source)
             except ValueError:
                 print(f"error: invalid --room-tone-source {args.room_tone_source!r}",
                       file=sys.stderr)
@@ -317,7 +336,6 @@ def _cmd_remove(args: argparse.Namespace) -> int:
                 if denoised_path is not None:
                     Path(denoised_path).unlink(missing_ok=True)
                 return 2
-            tone_start, tone_end = ts, te
         print(f"      room tone: {tone_start:.2f}-{tone_end:.2f}s "
               f"({(tone_end-tone_start)*1000:.0f}ms) "
               f"@ {args.room_tone_level_db:.1f}dB", file=sys.stderr)

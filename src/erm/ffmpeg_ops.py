@@ -64,6 +64,41 @@ def overlay_room_tone(audio_path: str | Path, tone_path: str | Path,
     subprocess.run(cmd, check=True, capture_output=True)
 
 
+def _splice_crossfade_s(
+    cut_s: float,
+    prev_len: float,
+    next_len: float,
+    *,
+    crossfade_ms: float | None,
+    min_crossfade_ms: float,
+    max_crossfade_ms: float,
+    crossfade_factor: float,
+    lhs_room: float | None = None,
+    rhs_room: float | None = None,
+) -> float:
+    """Per-splice crossfade length (seconds) for one splice. See `render`.
+
+    When `crossfade_ms` is given it's a fixed override; otherwise the fade
+    scales with the cut as ``cut_ms * crossfade_factor`` clamped to
+    ``[min_crossfade_ms, max_crossfade_ms]``. The result is then capped to
+    half of each surrounding fragment (so a fade can't exceed the audio it
+    has to live in) and, when `lhs_room`/`rhs_room` are supplied (the
+    distance from the splice back to the nearest real word on each side), to
+    twice that room — a fade reaches ~half its length into each side, so
+    ``2 * room`` keeps it from attenuating a real word. Never negative.
+    """
+    if crossfade_ms is not None:
+        cf = max(0.0, crossfade_ms) / 1000.0
+    else:
+        cf_ms = min(max_crossfade_ms,
+                    max(min_crossfade_ms, cut_s * 1000.0 * crossfade_factor))
+        cf = cf_ms / 1000.0
+    cf = min(cf, prev_len / 2, next_len / 2)
+    if lhs_room is not None and rhs_room is not None:
+        cf = min(cf, 2 * lhs_room, 2 * rhs_room)
+    return max(0.0, cf)
+
+
 def render(
     input_path: str | Path,
     keep_ranges: Sequence[tuple[float, float]],
@@ -100,19 +135,13 @@ def render(
     fades_s: list[float] = []
     for i in range(1, len(keep_ranges)):
         cut_s = keep_ranges[i][0] - keep_ranges[i - 1][1]
-        if crossfade_ms is not None:
-            cf = max(0.0, crossfade_ms) / 1000.0
-        else:
-            cf_ms = min(max_crossfade_ms, max(min_crossfade_ms, cut_s * 1000.0 * crossfade_factor))
-            cf = cf_ms / 1000.0
         prev_len = keep_ranges[i - 1][1] - keep_ranges[i - 1][0]
         next_len = keep_ranges[i][1] - keep_ranges[i][0]
-        cf = min(cf, prev_len / 2, next_len / 2)
 
         # Word-aware clamp: a crossfade extends ~cf/2 into the audio on
-        # *each* side of the splice. Keep that half-width from reaching
-        # back across a word boundary, so the fade never attenuates a
-        # real word.
+        # *each* side of the splice. Measure the room back to the nearest
+        # real word on each side so the fade never attenuates one.
+        lhs_room = rhs_room = None
         if words is not None:
             splice_lhs = keep_ranges[i - 1][1]
             splice_rhs = keep_ranges[i][0]
@@ -124,9 +153,15 @@ def render(
             )
             lhs_room = splice_lhs - prev_word_end
             rhs_room = next_word_start - splice_rhs
-            cf = min(cf, 2 * lhs_room, 2 * rhs_room)
 
-        fades_s.append(max(0.0, cf))
+        fades_s.append(_splice_crossfade_s(
+            cut_s, prev_len, next_len,
+            crossfade_ms=crossfade_ms,
+            min_crossfade_ms=min_crossfade_ms,
+            max_crossfade_ms=max_crossfade_ms,
+            crossfade_factor=crossfade_factor,
+            lhs_room=lhs_room, rhs_room=rhs_room,
+        ))
 
     parts: list[str] = []
     for i, (s, e) in enumerate(keep_ranges):

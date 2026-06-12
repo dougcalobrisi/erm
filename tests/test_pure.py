@@ -15,12 +15,16 @@ from erm import (
     Cut,
     Word,
     DEFAULT_FILLERS,
+    expected_max_word_duration,
     find_fillers,
+    find_quiet_region,
     invert_to_keep_ranges,
     is_filler,
+    merge_close_cuts,
     normalize_word,
     refine_boundaries,
 )
+from erm.ffmpeg_ops import _splice_crossfade_s
 
 
 # ---------- normalize_word -------------------------------------------------
@@ -255,3 +259,213 @@ def test_refine_handles_stereo_input():
     refined = refine_boundaries(stereo, sr, cuts, search_ms=60.0)
     assert len(refined) == 1
     assert 0.295 <= refined[0].start <= 0.305
+
+
+# ---------- merge_close_cuts -----------------------------------------------
+
+
+def test_merge_close_cuts_empty():
+    assert merge_close_cuts([]) == []
+
+
+def test_merge_close_cuts_far_apart_untouched():
+    cuts = [Cut(0.0, 0.2, "um"), Cut(1.0, 1.2, "uh")]
+    merged = merge_close_cuts(cuts, min_gap_s=0.10)
+    assert len(merged) == 2
+    assert merged == cuts
+
+
+def test_merge_close_cuts_collapses_short_fragment():
+    # 40ms surviving fragment between the two cuts -> merge.
+    cuts = [Cut(0.0, 0.20, "um"), Cut(0.24, 0.40, "uh")]
+    merged = merge_close_cuts(cuts, min_gap_s=0.10)
+    assert len(merged) == 1
+    assert merged[0].start == pytest.approx(0.0)
+    assert merged[0].end == pytest.approx(0.40)
+    assert merged[0].word == "um+uh"
+
+
+def test_merge_close_cuts_identical_labels_kept_single():
+    cuts = [Cut(0.0, 0.20, "um"), Cut(0.25, 0.40, "um")]
+    merged = merge_close_cuts(cuts, min_gap_s=0.10)
+    assert len(merged) == 1
+    assert merged[0].word == "um"
+
+
+def test_merge_close_cuts_gap_exactly_at_threshold_not_merged():
+    # Gap == min_gap_s is NOT merged (strict <). 0.25/0.50 are exact in
+    # binary float, so the boundary isn't blurred by rounding.
+    cuts = [Cut(0.0, 0.25, "um"), Cut(0.50, 0.75, "uh")]
+    merged = merge_close_cuts(cuts, min_gap_s=0.25)
+    assert len(merged) == 2
+
+
+def test_merge_close_cuts_union_when_second_nested():
+    # Second cut ends before the first -> union keeps the larger end.
+    cuts = [Cut(0.0, 0.50, "um"), Cut(0.05, 0.20, "uh")]
+    merged = merge_close_cuts(cuts, min_gap_s=0.10)
+    assert len(merged) == 1
+    assert merged[0].end == pytest.approx(0.50)
+
+
+def test_merge_close_cuts_sorts_unsorted_input():
+    cuts = [Cut(1.0, 1.2, "uh"), Cut(0.0, 0.2, "um")]
+    merged = merge_close_cuts(cuts, min_gap_s=0.10)
+    assert [c.start for c in merged] == [0.0, 1.0]
+
+
+def test_merge_close_cuts_chain_collapses_to_one():
+    cuts = [Cut(0.0, 0.1, "a"), Cut(0.13, 0.2, "b"), Cut(0.23, 0.3, "c")]
+    merged = merge_close_cuts(cuts, min_gap_s=0.10)
+    assert len(merged) == 1
+    assert merged[0].start == pytest.approx(0.0)
+    assert merged[0].end == pytest.approx(0.30)
+
+
+# ---------- expected_max_word_duration -------------------------------------
+
+
+def test_expected_max_word_duration_empty_after_normalize():
+    # Punctuation-only normalizes to "" -> the empty-word floor.
+    assert expected_max_word_duration("...") == pytest.approx(0.40)
+
+
+@pytest.mark.parametrize(
+    "word,expected",
+    [
+        ("a", 0.30),       # 0.18 + 0.12*1
+        ("as", 0.42),
+        ("and", 0.54),
+        ("that", 0.66),
+        ("session", 1.02),
+    ],
+)
+def test_expected_max_word_duration_formula(word, expected):
+    assert expected_max_word_duration(word) == pytest.approx(expected)
+
+
+def test_expected_max_word_duration_ignores_punctuation_in_count():
+    # normalize strips the comma, so "and," counts as 3 chars like "and".
+    assert expected_max_word_duration("and,") == pytest.approx(
+        expected_max_word_duration("and")
+    )
+
+
+def test_expected_max_word_duration_monotonic_in_length():
+    durations = [expected_max_word_duration("x" * n) for n in range(1, 8)]
+    assert durations == sorted(durations)
+    assert len(set(durations)) == len(durations)  # strictly increasing
+
+
+# ---------- find_quiet_region ----------------------------------------------
+
+
+def test_find_quiet_region_uses_leading_gap():
+    sr = 16_000
+    audio = np.zeros(2 * sr, dtype=np.float32)
+    words = [_w("hello", 0.80, 1.20)]  # 0.80s of pre-roll silence
+    region = find_quiet_region(audio, sr, words)
+    assert region is not None
+    start, end = region
+    # 50ms pad trimmed off the front; region sits inside [0, 0.80].
+    assert start == pytest.approx(0.05)
+    assert end <= 0.80
+
+
+def test_find_quiet_region_falls_back_to_trailing_gap():
+    sr = 16_000
+    total = 2.0
+    audio = np.zeros(int(total * sr), dtype=np.float32)
+    # Leading gap too short (0.10s), trailing gap is long.
+    words = [_w("hi", 0.10, 0.30), _w("there", 0.30, 0.60)]
+    region = find_quiet_region(audio, sr, words)
+    assert region is not None
+    start, end = region
+    assert start >= 0.60  # after the last word
+    assert end <= total
+
+
+def test_find_quiet_region_returns_none_when_no_room():
+    sr = 16_000
+    audio = np.zeros(sr, dtype=np.float32)
+    # Both gaps are shorter than min_length + padding.
+    words = [_w("hi", 0.05, 0.50), _w("yo", 0.50, 0.95)]
+    assert find_quiet_region(audio, sr, words) is None
+
+
+def test_find_quiet_region_no_words_uses_whole_clip():
+    sr = 16_000
+    audio = np.zeros(2 * sr, dtype=np.float32)
+    region = find_quiet_region(audio, sr, [])
+    assert region is not None
+    start, end = region
+    assert start == pytest.approx(0.05)
+    assert end - start <= 1.5  # capped at max_length_s
+
+
+def test_find_quiet_region_caps_at_max_length():
+    sr = 16_000
+    audio = np.zeros(10 * sr, dtype=np.float32)
+    words = [_w("late", 8.0, 8.5)]  # huge leading gap
+    region = find_quiet_region(audio, sr, words, max_length_s=1.5)
+    assert region is not None
+    start, end = region
+    assert end - start == pytest.approx(1.5)
+
+
+# ---------- _splice_crossfade_s --------------------------------------------
+
+
+def _cf(cut_s, prev_len=10.0, next_len=10.0, **kw):
+    kw.setdefault("crossfade_ms", None)
+    kw.setdefault("min_crossfade_ms", 40.0)
+    kw.setdefault("max_crossfade_ms", 80.0)
+    kw.setdefault("crossfade_factor", 0.10)
+    return _splice_crossfade_s(cut_s, prev_len, next_len, **kw)
+
+
+def test_splice_crossfade_scales_with_cut():
+    # 600ms cut * 0.10 = 60ms, within [40, 80].
+    assert _cf(0.60) == pytest.approx(0.060)
+
+
+def test_splice_crossfade_floored_at_min():
+    # 100ms cut * 0.10 = 10ms -> floored to 40ms.
+    assert _cf(0.10) == pytest.approx(0.040)
+
+
+def test_splice_crossfade_capped_at_max():
+    # 2s cut * 0.10 = 200ms -> capped to 80ms.
+    assert _cf(2.0) == pytest.approx(0.080)
+
+
+def test_splice_crossfade_fixed_override_ignores_cut_and_bounds():
+    cf = _cf(2.0, crossfade_ms=30.0)
+    assert cf == pytest.approx(0.030)
+
+
+def test_splice_crossfade_fixed_override_clamped_non_negative():
+    assert _cf(0.5, crossfade_ms=-5.0) == pytest.approx(0.0)
+
+
+def test_splice_crossfade_limited_by_short_fragment():
+    # 60ms fade wanted, but the next fragment is only 0.08s -> half is 0.04s.
+    assert _cf(0.60, next_len=0.08) == pytest.approx(0.040)
+
+
+def test_splice_crossfade_word_room_clamp():
+    # Fade would be 60ms, but only 10ms of room to the next word
+    # -> 2 * 0.010 = 0.020s ceiling.
+    cf = _cf(0.60, lhs_room=1.0, rhs_room=0.010)
+    assert cf == pytest.approx(0.020)
+
+
+def test_splice_crossfade_word_room_ignored_when_one_side_missing():
+    # Both lhs_room and rhs_room must be present for the word clamp.
+    cf = _splice_crossfade_s(
+        0.60, 10.0, 10.0,
+        crossfade_ms=None, min_crossfade_ms=40.0,
+        max_crossfade_ms=80.0, crossfade_factor=0.10,
+        lhs_room=None, rhs_room=0.010,
+    )
+    assert cf == pytest.approx(0.060)
