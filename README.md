@@ -121,10 +121,12 @@ timestamps. It removes the *sound* of the filler but leaves a hole of the
 original length.
 
 **`silence` depends on a floor in the hole.** The muted spans are filled by the
-room-tone overlay so the noise floor stays uniform. With `--mode silence
---no-room-tone --denoise none` the holes are bare digital silence (an audible
-"drop out"); `erm` warns when that combination is used. Keep room tone on (the
-default) for natural-sounding mutes.
+room-tone overlay so the noise floor stays uniform. Muting zeroes the span and
+denoising only *reduces* signal (it never backfills a zeroed hole), so room tone
+is the only thing that restores a floor — with `--mode silence --no-room-tone`
+the holes are bare digital silence (an audible "drop out") in *any* denoise mode,
+and `erm` warns whenever room tone is off. Keep room tone on (the default) for
+natural-sounding mutes.
 
 `silence` mode ignores `--pad-pause-factor` and `--min-gap-ms` — those only
 shape the splices that `remove` mode creates, and `silence` makes no splices.
@@ -188,7 +190,7 @@ minimum under it.
 | `--merge-gap-ms` | `120` | Merge two cuts whose surviving fragment would be shorter than this. |
 | `--pad-pause-factor` | `0.0` | (`remove` mode) Fraction of each cut's snapped silence to retain. `0` removes the whole cut. Never adds time beyond the cut's own silence. |
 | `--pad-min-ms` / `--pad-max-ms` | `0` / `120` | Lower/upper clamp on the retained pause, per side (ms). |
-| `--min-gap-ms` | `0.0` | (`remove` mode) Guarantee at least this much gap between the words flanking each splice, injecting silence when the natural pause is shorter. `0` injects nothing. |
+| `--min-gap-ms` | `0.0` | (`remove` mode) Guarantee at least this much gap between the words flanking each splice, injecting silence when the natural pause is shorter. `0` injects nothing. Mono/stereo input only (the injected silence must match the channel layout). |
 
 ### Audio cleanup
 

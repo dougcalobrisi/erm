@@ -38,9 +38,10 @@ recording's noise floor. The existing room-tone overlay (on by default) lays a
 constant sample of the recording's own room tone under the whole output,
 filling the muted holes with the natural floor — the same mechanism that masks
 splice discontinuities in `remove` mode. `silence` mode therefore *relies* on a
-floor being present. `erm` warns when `--mode silence` is combined with
-`--no-room-tone` **and** `--denoise none` (the only combination that leaves bare
-silence in the holes).
+floor being present. Denoising can't substitute: it only *reduces* signal, so it
+never backfills a zeroed hole. Room tone is the only thing that restores a floor,
+so `erm` warns whenever `--mode silence` is combined with `--no-room-tone`,
+regardless of the `--denoise` setting.
 
 ## The 1:1 refine invariant padding relies on
 
@@ -104,6 +105,12 @@ The default render path is gated behind `if gap_inserts or (min_gap_s > 0 and
 len(keep_ranges) > 1)` and is otherwise **untouched** — when no gap is injected
 *and* no floor is set (every existing caller and every default run), the verbatim
 original code runs, producing byte-identical output.
+
+The injected `anullsrc` needs an unambiguous `channel_layout` name to match the
+real audio, so min-gap injection supports **mono/stereo input only**
+(`gap_channel_layout`). The CLI probes the input up front and rejects anything
+else with a clean error before the (slow) transcribe pass, rather than failing
+at the final render step.
 
 ### Honoring the floor on gapless joins too
 

@@ -15,7 +15,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from erm.ffmpeg_ops import ffprobe_duration, render, render_silenced
+from erm.ffmpeg_ops import (
+    ffprobe_duration,
+    gap_channel_layout,
+    render,
+    render_silenced,
+)
 
 
 pytestmark = pytest.mark.skipif(
@@ -39,6 +44,41 @@ def _write_wav(path: Path, duration_s: float = CLIP_DURATION_S) -> None:
         wav.setsampwidth(2)
         wav.setframerate(SAMPLE_RATE)
         wav.writeframes(pcm16.tobytes())
+
+
+def _write_wav_multichannel(
+    path: Path, channels: int, duration_s: float = CLIP_DURATION_S
+) -> None:
+    """Synthesize a `channels`-wide 16-bit WAV (same tone on every channel)."""
+    n = int(round(duration_s * SAMPLE_RATE))
+    t = np.arange(n) / SAMPLE_RATE
+    mono = 0.2 * np.sin(2 * np.pi * 220.0 * t)
+    pcm16 = (np.clip(mono, -1.0, 1.0) * 32767).astype("<i2")
+    # np.repeat duplicates each sample `channels` times in place, which is the
+    # frame-interleaved layout wave expects (frame = one sample per channel).
+    interleaved = np.repeat(pcm16, channels)
+    with wave.open(str(path), "wb") as wav:
+        wav.setnchannels(channels)
+        wav.setsampwidth(2)
+        wav.setframerate(SAMPLE_RATE)
+        wav.writeframes(interleaved.tobytes())
+
+
+def test_gap_channel_layout_names_mono_and_stereo(tmp_path):
+    mono = tmp_path / "mono.wav"
+    _write_wav(mono)
+    assert gap_channel_layout(mono) == "mono"
+
+    stereo = tmp_path / "stereo.wav"
+    _write_wav_multichannel(stereo, 2)
+    assert gap_channel_layout(stereo) == "stereo"
+
+
+def test_gap_channel_layout_rejects_multichannel(tmp_path):
+    surround = tmp_path / "surround.wav"
+    _write_wav_multichannel(surround, 6)
+    with pytest.raises(ValueError, match="mono/stereo"):
+        gap_channel_layout(surround)
 
 
 def test_render_silenced_preserves_duration(tmp_path):

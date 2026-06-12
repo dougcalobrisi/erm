@@ -19,6 +19,7 @@ from .acoustic import is_sustained_vowel
 from .ffmpeg_ops import (
     denoise_to,
     extract_segment,
+    gap_channel_layout,
     overlay_room_tone,
     render,
     render_silenced,
@@ -210,6 +211,32 @@ def _timestamped(input_path: str | Path, suffix: str, ext: str) -> Path:
 def _cmd_remove(args: argparse.Namespace) -> int:
     fillers = _parse_filler_set(args.fillers)
 
+    # Validate spacing knobs up front so a bad combination fails immediately
+    # rather than after the (slow) transcribe/refine pass.
+    if args.pad_pause_factor < 0:
+        print("error: --pad-pause-factor must be >= 0", file=sys.stderr)
+        return 2
+    if args.pad_min_ms < 0 or args.pad_max_ms < 0:
+        print("error: --pad-min-ms / --pad-max-ms must be >= 0", file=sys.stderr)
+        return 2
+    if args.pad_min_ms > args.pad_max_ms:
+        print(f"error: --pad-min-ms ({args.pad_min_ms:g}) cannot exceed "
+              f"--pad-max-ms ({args.pad_max_ms:g})", file=sys.stderr)
+        return 2
+    if args.min_gap_ms < 0:
+        print("error: --min-gap-ms must be >= 0", file=sys.stderr)
+        return 2
+    # Min-gap injection mints mono/stereo-only silence sources. Probe the input
+    # now (channel count survives denoising) so an unsupported file fails fast
+    # with a clean message instead of a traceback at the final render step. A
+    # dry run never renders, so the limitation doesn't apply there.
+    if args.mode == "remove" and args.min_gap_ms > 0 and not args.dry_run:
+        try:
+            gap_channel_layout(args.input)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+
     if not args.output and not args.dry_run:
         args.output = str(_timestamped(args.input, "cleaned", "wav"))
         print(f"      output: {args.output}", file=sys.stderr)
@@ -369,11 +396,13 @@ def _cmd_remove(args: argparse.Namespace) -> int:
     needs_room_tone = args.room_tone
 
     # Warn when the holes (muted spans / injected gaps) would be bare digital
-    # silence rather than the natural room-tone floor.
-    if args.mode == "silence" and not needs_room_tone and args.denoise == "none":
-        print("warning: --mode silence with --no-room-tone and --denoise none — "
-              "muted holes will be digital silence, not a natural floor",
-              file=sys.stderr)
+    # silence rather than the natural room-tone floor. Muting zeroes the span and
+    # denoise only *reduces* signal (never fills a zeroed hole), so room tone is
+    # the only thing that backfills the floor — warn whenever it's off, in any
+    # denoise mode.
+    if args.mode == "silence" and not needs_room_tone:
+        print("warning: --mode silence with --no-room-tone — muted holes will be "
+              "digital silence, not a natural floor", file=sys.stderr)
     if args.mode == "remove" and injected > 0 and not needs_room_tone:
         print("warning: --min-gap-ms injects silence at tight splices; without "
               "room tone those gaps will be digital silence", file=sys.stderr)

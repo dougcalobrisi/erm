@@ -41,6 +41,25 @@ def _probe_audio_stream(path: str | Path) -> tuple[int, int]:
     return int(fields["sample_rate"]), int(fields["channels"])
 
 
+def gap_channel_layout(path: str | Path) -> str:
+    """Return the `anullsrc` ``channel_layout`` name for min-gap injection.
+
+    Only mono and stereo have an unambiguous layout name to mint matching
+    injected-silence (`anullsrc`) sources; for anything else, raise `ValueError`
+    rather than mislabel a multichannel mix as stereo and silently corrupt the
+    output. The CLI calls this up front (before transcription) so a `--min-gap-ms`
+    run on an unsupported input fails fast instead of after the whole pipeline.
+    """
+    _, channels = _probe_audio_stream(path)
+    layout = {1: "mono", 2: "stereo"}.get(channels)
+    if layout is None:
+        raise ValueError(
+            f"min-gap injection supports mono/stereo input only; got {channels} "
+            "channels. Re-run without --min-gap-ms, or downmix the input first."
+        )
+    return layout
+
+
 def extract_segment(input_path: str | Path, start_s: float, end_s: float,
                     output_path: str | Path) -> None:
     cmd = ["ffmpeg", "-y", "-i", str(input_path),
@@ -255,17 +274,10 @@ def _render_with_gaps(
         crossfade_factor=crossfade_factor,
         min_gap_s=min_gap_s,
     )
-    sample_rate, channels = _probe_audio_stream(input_path)
+    sample_rate, _ = _probe_audio_stream(input_path)
     # The injected `anullsrc` must match the real audio's channel layout so
-    # `concat` joins them without a mismatch. Only mono/stereo have an
-    # unambiguous name here; for anything else, fail loudly rather than
-    # mislabel a multichannel mix as stereo and silently corrupt the output.
-    layout = {1: "mono", 2: "stereo"}.get(channels)
-    if layout is None:
-        raise ValueError(
-            f"min-gap injection supports mono/stereo input only; got {channels} "
-            "channels. Re-run without --min-gap-ms, or downmix the input first."
-        )
+    # `concat` joins them without a mismatch (the CLI validates this up front).
+    layout = gap_channel_layout(input_path)
 
     parts: list[str] = []
     for i, (s, e) in enumerate(keep_ranges):

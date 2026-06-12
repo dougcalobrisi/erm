@@ -43,8 +43,8 @@ additive fields.
   `output ≈ input − cuts + injected_gap_s`. Cut lists without these fields
   default to `remove` / `0.0` and validate exactly as before.
 - `erm` warns when muted holes or injected gaps would be bare digital silence
-  rather than a natural floor (`--mode silence` with `--no-room-tone --denoise
-  none`, or `--min-gap-ms` with `--no-room-tone`).
+  rather than a natural floor (`--mode silence` or `--min-gap-ms` combined with
+  `--no-room-tone`).
 
 ## [0.2.0] - 2026-06-12
 

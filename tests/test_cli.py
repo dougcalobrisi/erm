@@ -153,6 +153,75 @@ def test_remove_parser_rejects_unknown_mode():
         cli._build_remove_parser().parse_args(["in.wav", "--mode", "mute"])
 
 
+# ---------- _cmd_remove spacing-knob validation ----------------------------
+#
+# These bad combinations are rejected up front (exit 2) before any heavy
+# transcribe/refine work, so they don't need the pipeline stubbed.
+
+
+def test_cmd_remove_rejects_pad_min_above_max(capsys):
+    args = cli._build_remove_parser().parse_args(
+        ["in.wav", "--pad-min-ms", "200", "--pad-max-ms", "100", "--dry-run"]
+    )
+    assert cli._cmd_remove(args) == 2
+    assert "pad-min-ms" in capsys.readouterr().err
+
+
+def test_cmd_remove_rejects_negative_pad_factor(capsys):
+    args = cli._build_remove_parser().parse_args(
+        ["in.wav", "--pad-pause-factor", "-0.1", "--dry-run"]
+    )
+    assert cli._cmd_remove(args) == 2
+    assert "pad-pause-factor" in capsys.readouterr().err
+
+
+def test_cmd_remove_rejects_negative_pad_bounds(capsys):
+    args = cli._build_remove_parser().parse_args(
+        ["in.wav", "--pad-min-ms", "-5", "--dry-run"]
+    )
+    assert cli._cmd_remove(args) == 2
+
+
+def test_cmd_remove_rejects_negative_min_gap(capsys):
+    args = cli._build_remove_parser().parse_args(
+        ["in.wav", "--min-gap-ms", "-5", "--dry-run"]
+    )
+    assert cli._cmd_remove(args) == 2
+
+
+def test_cmd_remove_min_gap_rejects_unsupported_channels(monkeypatch, capsys):
+    # >2-channel input is caught up front (before transcription) with a clean
+    # error + exit 2, not a traceback at the final render step.
+    def _raise(_path):
+        raise ValueError(
+            "min-gap injection supports mono/stereo input only; got 6 channels."
+        )
+
+    monkeypatch.setattr(cli, "gap_channel_layout", _raise)
+    args = cli._build_remove_parser().parse_args(["in.wav", "--min-gap-ms", "100"])
+    assert cli._cmd_remove(args) == 2
+    assert "mono/stereo" in capsys.readouterr().err
+
+
+def test_cmd_remove_min_gap_channel_check_skipped_on_dry_run(monkeypatch):
+    # A dry run never renders, so the channel limitation doesn't apply — the
+    # up-front probe must not run (and certainly not abort).
+    def _fail(_path):  # pragma: no cover - must never be called
+        raise AssertionError("gap_channel_layout should not run on a dry run")
+
+    monkeypatch.setattr(cli, "gap_channel_layout", _fail)
+    monkeypatch.setattr(
+        cli, "transcribe", lambda *a, **k: (_ for _ in ()).throw(SystemExit(0))
+    )
+    args = cli._build_remove_parser().parse_args(
+        ["in.wav", "--min-gap-ms", "100", "--dry-run", "--denoise", "none"]
+    )
+    # transcribe is stubbed to bail out; reaching it proves the channel check
+    # was skipped without aborting (and --denoise none avoids the pre-pass).
+    with pytest.raises(SystemExit):
+        cli._cmd_remove(args)
+
+
 # ---------- validate-parser ------------------------------------------------
 
 
