@@ -14,16 +14,21 @@ VERBATIM_PROMPT = (
 )
 
 
-# Substrings that mark a CUDA/cuDNN runtime-library load failure. faster-whisper
-# (via ctranslate2) raises a bare RuntimeError when `device="auto"` picks the GPU
-# but the CUDA wheels (libcublas, libcudnn) aren't installed — a very common
-# setup on machines that have an NVIDIA GPU + driver but no CUDA runtime.
-_CUDA_LOAD_MARKERS = ("libcublas", "libcudnn", "cublas", "cudnn", "cuda")
+# Substrings that mark a CUDA error we can recover from by retrying on CPU.
+# faster-whisper (via ctranslate2) raises a bare RuntimeError when `device="auto"`
+# picks the GPU but the CUDA wheels (libcublas, libcudnn) aren't installed — a very
+# common setup on machines that have an NVIDIA GPU + driver but no CUDA runtime.
+# This intentionally also matches other GPU-side CUDA failures (driver too old,
+# out of memory): under `device="auto"` the user didn't demand the GPU, so any
+# CUDA failure is better handled by silently retrying on CPU than by crashing.
+# `cublas`/`cudnn` are substrings of the `lib*` names, and most messages also
+# contain `cuda`, so this short list covers the observed failure strings.
+_RECOVERABLE_CUDA_MARKERS = ("cublas", "cudnn", "cuda")
 
 
-def _is_cuda_load_error(exc: Exception) -> bool:
+def _is_recoverable_cuda_error(exc: Exception) -> bool:
     message = str(exc).lower()
-    return any(marker in message for marker in _CUDA_LOAD_MARKERS)
+    return any(marker in message for marker in _RECOVERABLE_CUDA_MARKERS)
 
 
 def transcribe(
@@ -74,11 +79,12 @@ def transcribe(
     except RuntimeError as exc:
         # Only auto-recover when the user let us pick the device. If they asked
         # for "cuda" explicitly, surface the real error.
-        if device == "auto" and _is_cuda_load_error(exc):
+        if device == "auto" and _is_recoverable_cuda_error(exc):
             print(
                 f"warning: GPU transcription failed ({exc}); falling back to CPU. "
-                "Pass --device cpu to silence this, or see the README for "
-                "installing the CUDA runtime libraries.",
+                "Pass --device cpu to silence this, or see the README's "
+                "\"Transcription device\" section for installing the CUDA "
+                "runtime libraries.",
                 file=sys.stderr,
             )
             return _run("cpu")

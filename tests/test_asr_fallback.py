@@ -11,7 +11,7 @@ import types
 
 import pytest
 
-from erm.asr import _is_cuda_load_error, transcribe
+from erm.asr import _is_recoverable_cuda_error, transcribe
 
 
 @pytest.mark.parametrize(
@@ -22,12 +22,12 @@ from erm.asr import _is_cuda_load_error, transcribe
         "CUDA driver version is insufficient",
     ],
 )
-def test_is_cuda_load_error_matches(message):
-    assert _is_cuda_load_error(RuntimeError(message))
+def test_is_recoverable_cuda_error_matches(message):
+    assert _is_recoverable_cuda_error(RuntimeError(message))
 
 
-def test_is_cuda_load_error_ignores_unrelated():
-    assert not _is_cuda_load_error(RuntimeError("ffmpeg returned non-zero exit"))
+def test_is_recoverable_cuda_error_ignores_unrelated():
+    assert not _is_recoverable_cuda_error(RuntimeError("ffmpeg returned non-zero exit"))
 
 
 class _FakeSegment:

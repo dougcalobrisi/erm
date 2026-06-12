@@ -124,7 +124,7 @@ def _build_validate_parser() -> argparse.ArgumentParser:
     p.add_argument("--cuts", help="Cut list JSON written by `remove`.")
     p.add_argument("--model", default="medium.en")
     p.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto",
-                   help="Compute device for transcription (see `erm --help`).")
+                   help="Compute device for transcription (see `erm remove --help`).")
     p.add_argument("--compute-type", dest="compute_type", default="auto",
                    help="faster-whisper compute type (e.g. int8, float16).")
     p.add_argument("--report", help="Write report JSON to this path.")
