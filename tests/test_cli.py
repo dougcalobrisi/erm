@@ -222,6 +222,37 @@ def test_cmd_remove_min_gap_channel_check_skipped_on_dry_run(monkeypatch):
         cli._cmd_remove(args)
 
 
+def test_cmd_remove_silence_mode_warns_ignored_spacing_flags(monkeypatch, capsys):
+    # The spacing knobs only shape remove-mode splices, so passing them with
+    # --mode silence warns (but does not error — exit stays past validation).
+    monkeypatch.setattr(
+        cli, "transcribe", lambda *a, **k: (_ for _ in ()).throw(SystemExit(0))
+    )
+    args = cli._build_remove_parser().parse_args(
+        ["in.wav", "--mode", "silence", "--min-gap-ms", "100",
+         "--pad-pause-factor", "0.5", "--dry-run", "--denoise", "none"]
+    )
+    with pytest.raises(SystemExit):
+        cli._cmd_remove(args)
+    err = capsys.readouterr().err
+    assert "ignored in --mode silence" in err
+    assert "--pad-pause-factor" in err
+    assert "--min-gap-ms" in err
+
+
+def test_cmd_remove_silence_mode_no_warning_without_spacing_flags(monkeypatch, capsys):
+    # Default silence run (no spacing knobs) emits no ignored-flag warning.
+    monkeypatch.setattr(
+        cli, "transcribe", lambda *a, **k: (_ for _ in ()).throw(SystemExit(0))
+    )
+    args = cli._build_remove_parser().parse_args(
+        ["in.wav", "--mode", "silence", "--dry-run", "--denoise", "none"]
+    )
+    with pytest.raises(SystemExit):
+        cli._cmd_remove(args)
+    assert "ignored in --mode silence" not in capsys.readouterr().err
+
+
 # ---------- validate-parser ------------------------------------------------
 
 

@@ -45,6 +45,9 @@ additive fields.
 - `erm` warns when muted holes or injected gaps would be bare digital silence
   rather than a natural floor (`--mode silence` or `--min-gap-ms` combined with
   `--no-room-tone`).
+- `erm` warns when `--pad-pause-factor` or `--min-gap-ms` are passed with
+  `--mode silence`, since those knobs only shape remove-mode splices and are
+  inert there.
 
 ## [0.2.0] - 2026-06-12
 

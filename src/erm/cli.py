@@ -237,6 +237,22 @@ def _cmd_remove(args: argparse.Namespace) -> int:
             print(f"error: {exc}", file=sys.stderr)
             return 2
 
+    # The spacing knobs only shape the splices that `remove` mode creates;
+    # `silence` mode makes no splices, so they're inert there. Warn rather than
+    # error so a caller flipping --mode on an existing command line isn't broken.
+    if args.mode == "silence":
+        ignored = [
+            flag
+            for flag, value in (
+                ("--pad-pause-factor", args.pad_pause_factor),
+                ("--min-gap-ms", args.min_gap_ms),
+            )
+            if value > 0
+        ]
+        if ignored:
+            print(f"warning: {' / '.join(ignored)} ignored in --mode silence "
+                  "(they only shape remove-mode splices)", file=sys.stderr)
+
     if not args.output and not args.dry_run:
         args.output = str(_timestamped(args.input, "cleaned", "wav"))
         print(f"      output: {args.output}", file=sys.stderr)

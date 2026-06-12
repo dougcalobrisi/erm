@@ -101,6 +101,14 @@ makes the injected duration exact. Injected silence is bare silence, **not**
 room tone — the room-tone overlay fills it with the natural floor afterward,
 exactly like the `silence`-mode holes.
 
+Because both joins flanking an injected gap (`keep→gap` and `gap→keep`) are
+`concat`, a splice that gets a gap injected **loses its crossfade** — the gap
+replaces the overlap rather than being faded into. That's fine in practice: cuts
+are already refined onto silence/zero-crossings (so the hard `concat` boundary is
+click-free) and the room-tone overlay masks the floor across it, the same way it
+masks an un-faded `silence`-mode hole. So a given splice is smoothed *either* by a
+crossfade (no injection) *or* separated by injected silence — never both.
+
 The default render path is gated behind `if gap_inserts or (min_gap_s > 0 and
 len(keep_ranges) > 1)` and is otherwise **untouched** — when no gap is injected
 *and* no floor is set (every existing caller and every default run), the verbatim
