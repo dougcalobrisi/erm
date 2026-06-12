@@ -36,6 +36,13 @@ CLIP_DURATION_S = 2.30
 
 def _write_wav(path: Path) -> None:
     """Synthesize a mono 16-bit WAV: a quiet hiss with voiced tones on words."""
+    # Seeded so the noise floor is identical every run (no flakiness). The
+    # 150 Hz voiced tone is what the *acoustic* detectors key off — but the
+    # primary cut in this test comes from the stubbed transcriber's "um", not
+    # the audio. `test_dry_run_without_acoustic_detectors_still_cuts_...`
+    # pins that down: even with `--no-detect-gaps` the filler is still cut, so
+    # this synthesized signal can't silently stop exercising the cut path if
+    # detector thresholds are later retuned.
     samples = np.random.default_rng(0).normal(0.0, 0.003,
                                                int(CLIP_DURATION_S * SAMPLE_RATE))
     t = np.arange(samples.size) / SAMPLE_RATE

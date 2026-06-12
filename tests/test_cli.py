@@ -4,15 +4,22 @@ These exercise the pure parsing/dispatch logic only — argument parsing,
 subcommand routing, and the small helpers — without invoking faster-whisper,
 librosa, or ffmpeg. The heavy pipeline functions (`_cmd_remove`/`_cmd_validate`)
 are monkeypatched so we can assert routing without running them.
+
+The one exception is `test_cmd_remove_invalid_room_tone_source_*`, which drives
+`_cmd_remove` end-to-end with every heavy dependency (transcribe, audio load,
+denoise, render) stubbed, to cover the `--room-tone-source` error path and its
+intermediate-file cleanup. It still avoids librosa/ffmpeg/whisper entirely.
 """
 
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
+import numpy as np
 import pytest
 
-from erm import cli
+from erm import Word, cli
 
 
 # ---------- _parse_filler_set ----------------------------------------------
@@ -48,6 +55,8 @@ def test_parse_room_tone_source_valid():
         "1.0-2.0-3.0",   # too many values
         "abc-def",       # non-numeric
         "",              # empty
+        "-1.0-2.0",      # leading '-' -> 3 fields; negative offsets unsupported
+        "0.5--1.0",      # negative end, same reason
     ],
 )
 def test_parse_room_tone_source_invalid_raises(bad):
@@ -173,7 +182,78 @@ def test_main_routes_validate_subcommand(captured_dispatch):
 
 
 def test_main_remove_input_named_remove_is_disambiguated(captured_dispatch):
-    # A first token of "remove" is consumed as the subcommand; the actual
-    # filename follows. (Documents the current routing contract.)
+    # `remove` and `validate` are reserved as leading subcommand tokens: the
+    # first one is always stripped before parsing. So to operate on a file
+    # literally named "remove", the explicit subcommand must precede it.
+    # This is the intended dispatch contract, not an accident of parsing.
     assert cli.main(["remove", "remove"]) == 0
     assert captured_dispatch["remove"].input == "remove"
+
+
+def test_main_bare_reserved_word_has_no_input(captured_dispatch):
+    # The flip side of the contract: `erm remove` with nothing after it is a
+    # bare subcommand, NOT a request to process a file named "remove". The
+    # stripped argv is empty, so the required `input` positional is missing
+    # and argparse exits 2 — _cmd_remove is never reached.
+    with pytest.raises(SystemExit):
+        cli.main(["remove"])
+    assert "remove" not in captured_dispatch
+
+
+# ---------- _cmd_remove room-tone-source error path ------------------------
+
+
+@pytest.fixture
+def stubbed_pipeline(monkeypatch):
+    """Stub every heavy stage of `_cmd_remove` and record real intermediates.
+
+    `transcribe` yields a single "um" so a cut survives to the render/room-tone
+    stage; `denoise_to` and `render` write real files at their target paths so
+    the error-path cleanup (`unlink`) is actually observable on disk.
+    """
+    created: dict[str, Path] = {}
+
+    def _fake_transcribe(path, **kwargs):
+        return [Word(text="um", start=0.40, end=0.70)], 1.0
+
+    def _fake_load_audio_mono(path):
+        return np.zeros(16_000, dtype=np.float32), 16_000
+
+    def _fake_denoise_to(src, dst, **kwargs):
+        Path(dst).write_bytes(b"denoised")
+        created["denoised"] = Path(dst)
+
+    def _fake_render(src, keep_ranges, dst, **kwargs):
+        Path(dst).write_bytes(b"raw")
+        created["render_target"] = Path(dst)
+
+    monkeypatch.setattr(cli, "transcribe", _fake_transcribe)
+    monkeypatch.setattr(cli, "load_audio_mono", _fake_load_audio_mono)
+    monkeypatch.setattr(cli, "denoise_to", _fake_denoise_to)
+    monkeypatch.setattr(cli, "render", _fake_render)
+    return created
+
+
+def test_cmd_remove_invalid_room_tone_source_returns_2_and_cleans_up(
+    tmp_path, stubbed_pipeline, capsys
+):
+    in_wav = tmp_path / "in.wav"
+    in_wav.write_bytes(b"")  # only the path matters; transcribe is stubbed
+    out_wav = tmp_path / "out.wav"
+
+    rc = cli.main([
+        str(in_wav), "-o", str(out_wav),
+        "--denoise", "hybrid",       # creates a denoised intermediate to clean up
+        "--no-detect-gaps",          # skip acoustic detectors
+        "--room-tone-source", "not-a-range",  # -> ValueError -> exit 2
+    ])
+
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "invalid --room-tone-source" in err
+
+    # Both intermediates were created, then removed on the error path; the
+    # real output was never written.
+    assert stubbed_pipeline["denoised"].exists() is False
+    assert stubbed_pipeline["render_target"].exists() is False
+    assert not out_wav.exists()

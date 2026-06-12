@@ -145,6 +145,10 @@ def _parse_room_tone_source(value: str) -> tuple[float, float]:
 
     Raises ``ValueError`` if the spec isn't exactly two dash-separated
     numbers (the caller turns that into a usage error with exit code 2).
+    Negative offsets are rejected as a side effect: ``-`` is the field
+    separator, so ``"-1.0-2.0"`` splits into three parts and fails. Room
+    tone is sampled from real audio time, which always starts at 0, so
+    there's no valid negative spec to support.
     """
     start_s, end_s = (float(part) for part in value.split("-"))
     return start_s, end_s
