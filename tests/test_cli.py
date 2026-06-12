@@ -57,6 +57,8 @@ def test_parse_room_tone_source_valid():
         "",              # empty
         "-1.0-2.0",      # leading '-' -> 3 fields; negative offsets unsupported
         "0.5--1.0",      # negative end, same reason
+        "2.0-1.0",       # end < start -> backwards segment
+        "1.0-1.0",       # end == start -> empty segment
     ],
 )
 def test_parse_room_tone_source_invalid_raises(bad):

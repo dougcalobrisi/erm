@@ -149,8 +149,14 @@ def _parse_room_tone_source(value: str) -> tuple[float, float]:
     separator, so ``"-1.0-2.0"`` splits into three parts and fails. Room
     tone is sampled from real audio time, which always starts at 0, so
     there's no valid negative spec to support.
+
+    A non-increasing range (``end <= start``) is also rejected: it would
+    extract an empty or backwards segment downstream, which ffmpeg turns
+    into a confusing failure far from the user's typo.
     """
     start_s, end_s = (float(part) for part in value.split("-"))
+    if start_s < 0 or end_s <= start_s:
+        raise ValueError(f"room-tone range must be 0 <= start < end: {value!r}")
     return start_s, end_s
 
 

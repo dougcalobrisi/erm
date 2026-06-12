@@ -24,7 +24,8 @@ from erm import (
     normalize_word,
     refine_boundaries,
 )
-from erm.ffmpeg_ops import _splice_crossfade_s
+from erm import ffmpeg_ops
+from erm.ffmpeg_ops import _splice_crossfade_s, render
 
 
 # ---------- normalize_word -------------------------------------------------
@@ -469,3 +470,42 @@ def test_splice_crossfade_word_room_ignored_when_one_side_missing():
         lhs_room=None, rhs_room=0.010,
     )
     assert cf == pytest.approx(0.060)
+
+
+# ---------- render word-room defaults --------------------------------------
+
+
+def _capture_render_filter(monkeypatch, keep_ranges, words):
+    """Run render() with ffmpeg stubbed; return the -filter_complex string."""
+    captured = {}
+
+    def _fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return None
+
+    monkeypatch.setattr(ffmpeg_ops.subprocess, "run", _fake_run)
+    render("in.wav", keep_ranges, "out.wav", words=words)
+    cmd = captured["cmd"]
+    return cmd[cmd.index("-filter_complex") + 1]
+
+
+def test_render_keeps_crossfades_when_no_word_after_last_splice(monkeypatch):
+    # A splice whose right side has no following word must not collapse the
+    # fade to zero (which would force the whole render onto `concat`). With
+    # keep-range-boundary defaults the fade survives and we still crossfade.
+    keep_ranges = [(0.0, 1.0), (1.5, 2.0), (2.5, 3.0)]
+    words = [_w("hello", 0.1, 0.9)]  # nothing at/after the later splices
+    filter_complex = _capture_render_filter(monkeypatch, keep_ranges, words)
+    assert "acrossfade" in filter_complex
+    assert "concat" not in filter_complex
+
+
+def test_render_falls_back_to_concat_when_a_real_word_hugs_the_splice(monkeypatch):
+    # Sanity check the other direction: a word ending exactly at a splice
+    # leaves zero room, so that fade is 0 and render uses concat. This pins
+    # the behavior the default-fix is careful NOT to trigger spuriously.
+    keep_ranges = [(0.0, 1.0), (1.5, 2.0)]
+    words = [_w("hugs", 0.5, 1.0)]  # ends at the splice LHS -> lhs_room == 0
+    filter_complex = _capture_render_filter(monkeypatch, keep_ranges, words)
+    assert "concat" in filter_complex
+    assert "acrossfade" not in filter_complex

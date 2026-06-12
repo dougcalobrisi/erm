@@ -141,15 +141,24 @@ def render(
         # Word-aware clamp: a crossfade extends ~cf/2 into the audio on
         # *each* side of the splice. Measure the room back to the nearest
         # real word on each side so the fade never attenuates one.
+        #
+        # When a side has no word (e.g. a splice past the last word), fall
+        # back to that fragment's own boundary — meaning "no word to protect
+        # here," so this clamp imposes nothing beyond the fragment-length cap
+        # below. Defaulting to the splice point instead would make the room 0,
+        # collapsing this splice's fade and — because render needs *every*
+        # fade > 0 — disabling crossfades for the whole output.
         lhs_room = rhs_room = None
         if words is not None:
             splice_lhs = keep_ranges[i - 1][1]
             splice_rhs = keep_ranges[i][0]
             prev_word_end = max(
-                (w.end for w in words if w.end <= splice_lhs), default=0.0
+                (w.end for w in words if w.end <= splice_lhs),
+                default=keep_ranges[i - 1][0],
             )
             next_word_start = min(
-                (w.start for w in words if w.start >= splice_rhs), default=splice_rhs,
+                (w.start for w in words if w.start >= splice_rhs),
+                default=keep_ranges[i][1],
             )
             lhs_room = splice_lhs - prev_word_end
             rhs_room = next_word_start - splice_rhs
