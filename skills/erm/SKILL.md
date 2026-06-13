@@ -70,6 +70,14 @@ Then read the **recipes** doc and use the matching copy-paste command.
 Useful flags (confirm with `erm --help`): `-o/--output`, `--json`, `--model`,
 `--device`, `--fillers`. The full `usage` doc explains the workflow in depth.
 
+**Adjusting the word list.** If the user wants to strip an extra word (e.g.
+"also remove 'basically' / 'like'"), prefer `--add-fillers "basically,like"` —
+it keeps the built-in defaults and unions the new words on top. Use
+`--remove-fillers WORD` to drop a default that over-matches their voice. Reach
+for `--fillers` only to replace the whole set, since it requires re-typing every
+stem. Custom words match verbatim (no automatic elongation). See the
+`recipes` doc → "Custom filler vocabulary".
+
 ## 4. When results aren't perfect
 
 If fillers remain, real words get clipped, splices click/smear, the noise floor

@@ -68,6 +68,13 @@ checks set membership, then falls back to a per-stem regex in
 elongation coverage for a *custom* filler you pass via `--fillers` unless a
 stem pattern exists for it — a word with no pattern only matches verbatim.
 
+The word list is composed from three flags (`cli.py:_resolve_filler_set`):
+`--fillers` defines the set (defaulting to `DEFAULT_FILLERS`), `--add-fillers`
+unions words on top, and `--remove-fillers` subtracts — removal applied last, so
+it wins over additions. Prefer `--add-fillers "basically"` /
+`--remove-fillers "ah"` to adjust the defaults; `--fillers` replaces the whole
+set and means re-typing every stem.
+
 This pass is purely textual; it never touches the audio.
 
 ## Pass 2 — gap fillers (`detect.py:detect_gap_fillers`)

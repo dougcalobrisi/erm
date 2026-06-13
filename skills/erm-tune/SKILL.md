@@ -33,6 +33,8 @@ Use AskUserQuestion to pin the symptom (each maps to a different cluster), unles
 the user already described it:
 
 - Fillers still audible / missed → **detection**
+- A specific word should also be cut, or a default word is over-matching →
+  **detection** word list (`--add-fillers` / `--remove-fillers`)
 - Real words clipped or chopped → **detection** (too aggressive) / **refinement**
 - Splices click, pop, or sound smeared/blurry → **crossfade** / **refinement**
 - Noise floor pumps, audible level changes at edits → **denoise / room tone**
@@ -48,6 +50,9 @@ Read the linked doc page for good-value ranges before changing anything.
 1. **Detection aggressiveness** (what gets cut) — `--model` (biggest lever),
    `--detect-gaps`, `--confirm-pitch`, `--gap-min-ms`, `--gap-min-voiced-ms`,
    `--gap-max-voiced-ms`, `--intraword-min-ms`, `--fillers`. → `detection` doc.
+   - **Word list (pass 1):** `--add-fillers "word,word"` adds words on top of
+     the defaults; `--remove-fillers "word"` drops a default that over-matches
+     (removal wins). Prefer these over `--fillers`, which replaces the whole set.
 2. **Refinement / merge** (clean splice points) — `--search-ms`,
    `--merge-gap-ms`. → `render-pipeline` doc.
 3. **Splice spacing** (remove mode breathing room) — `--pad-pause-factor`,
