@@ -104,3 +104,47 @@ def probe_video(path: str | Path) -> VideoInfo:
         pix_fmt=fields.get("pix_fmt"),
         sar=fields.get("sample_aspect_ratio"),
     )
+
+
+def audio_mux_args(output_ext: str) -> list[str]:
+    """ffmpeg `-c:a …` args for muxing the clean PCM master into `output_ext`.
+
+    The audio pipeline produces a clean `pcm_s16le` master; this picks how to
+    store it per container, preferring **no re-encode** where the container holds
+    PCM natively (mov/mkv/avi → ``-c:a copy``). mp4 has no universally-supported
+    lossless audio, so it gets transparent-for-speech AAC 256k; webm is
+    Opus-only.
+    """
+    ext = output_ext.lower().lstrip(".")
+    if ext in ("mp4", "m4v"):
+        return ["-c:a", "aac", "-b:a", "256k"]
+    if ext == "webm":
+        return ["-c:a", "libopus", "-b:a", "160k"]
+    # mov / mkv / avi hold PCM natively — copy the master losslessly.
+    return ["-c:a", "copy"]
+
+
+def mux_av(video_path: str | Path, audio_path: str | Path,
+           output_path: str | Path, *, vcodec: str = "copy",
+           crf: float | None = None, preset: str | None = None) -> None:
+    """Mux one video stream + the audio master into `output_path`.
+
+    Takes `v:0` from `video_path` and `a:0` from `audio_path` (the clean PCM
+    master). `vcodec="copy"` stream-copies the picture (silence mode — frame
+    accurate, zero quality loss); pass a real encoder (e.g. ``libx264``) with
+    `crf`/`preset` when the video was re-encoded upstream. Audio codec is chosen
+    by the output container (see `audio_mux_args`).
+    """
+    ext = Path(output_path).suffix
+    cmd = ["ffmpeg", "-y", "-i", str(video_path), "-i", str(audio_path),
+           "-map", "0:v:0", "-map", "1:a:0", "-c:v", vcodec]
+    if vcodec != "copy":
+        if crf is not None:
+            cmd += ["-crf", f"{crf:g}"]
+        if preset is not None:
+            cmd += ["-preset", preset]
+    cmd += audio_mux_args(ext)
+    if ext.lower() in (".mp4", ".m4v", ".mov"):
+        cmd += ["-movflags", "+faststart"]
+    cmd += [str(output_path)]
+    subprocess.run(cmd, check=True, capture_output=True)

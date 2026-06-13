@@ -36,7 +36,7 @@ from .ranges import (
 )
 from .refine import refine_boundaries
 from .validate import validate_output
-from .video import VideoInfo, probe_video
+from .video import VideoInfo, mux_av, probe_video
 
 
 def _build_remove_parser() -> argparse.ArgumentParser:
@@ -529,11 +529,12 @@ def _cmd_remove(args: argparse.Namespace) -> int:
         _cleanup_temps()
         return 1
 
-    # TODO(phase 2-4): wire the video render + mux here. Until then, fail loudly
-    # rather than silently emit audio into a video-named output.
-    if render_video:
-        print("error: --video rendering is not wired yet (landing in a "
-              "follow-up phase)", file=sys.stderr)
+    # TODO(phase 3-4): remove-mode video render. Silence-mode video is wired
+    # below (stream-copy + mux). Until remove-mode lands, fail loudly rather than
+    # silently emit audio into a video-named output.
+    if render_video and args.mode != "silence":
+        print("error: --video with --mode remove is not wired yet (landing in a "
+              "follow-up phase); use --mode silence, or drop --video", file=sys.stderr)
         _cleanup_temps()
         return 1
 
@@ -560,7 +561,26 @@ def _cmd_remove(args: argparse.Namespace) -> int:
               + (f", {injected:.2f}s gap injected)" if injected > 0 else ")"),
               file=sys.stderr)
 
-    render_target = args.output
+    # For a video render the audio pipeline writes a clean PCM master to a temp
+    # WAV; the picture is muxed onto it into args.output afterward. Audio-only
+    # runs write straight to args.output, exactly as before.
+    audio_dest = args.output
+    if render_video:
+        audio_dest = str(_timestamped(args.input, "audiomaster", "wav"))
+
+    def _finalize(audio_master: str) -> int:
+        """Mux the picture onto the finished audio master (video runs), or no-op
+        for audio-only, then clean up temps and return 0."""
+        if render_video:
+            # Silence mode keeps the original picture frame-for-frame, so the
+            # video is stream-copied; durations already match (no cut excised).
+            print(f"      muxing video -> {args.output}", file=sys.stderr)
+            mux_av(args.input, audio_master, args.output, vcodec="copy")
+            Path(audio_master).unlink(missing_ok=True)
+        _cleanup_temps()
+        return 0
+
+    render_target = audio_dest
     if needs_post_denoise or needs_room_tone:
         render_target = str(_timestamped(args.input, "raw", "wav"))
 
@@ -580,17 +600,19 @@ def _cmd_remove(args: argparse.Namespace) -> int:
     current = render_target
     if needs_post_denoise:
         print(f"      denoising output...", file=sys.stderr)
-        next_target = (args.output if not needs_room_tone
+        next_target = (audio_dest if not needs_room_tone
                        else str(_timestamped(args.input, "denoised-out", "wav")))
         denoise_to(current, next_target,
                    nr=args.denoise_nr, nf=args.denoise_nf)
-        if current != args.output:
+        if current != audio_dest:
             Path(current).unlink(missing_ok=True)
         current = next_target
 
     if needs_room_tone:
         # Always sample the room tone from the *original* — that's what has
         # the real ambient character. Denoising would strip it.
+        skip_overlay = False
+        tone_start = tone_end = 0.0
         if args.room_tone_source == "auto":
             if audio is None:
                 audio, sr = load_audio_mono(original_audio)
@@ -598,36 +620,37 @@ def _cmd_remove(args: argparse.Namespace) -> int:
             if region is None:
                 print("      room tone: no quiet region found — skipping",
                       file=sys.stderr)
-                if current != args.output:
-                    Path(args.output).unlink(missing_ok=True)
-                    Path(current).rename(args.output)
-                _cleanup_temps()
-                return 0
-            tone_start, tone_end = region
+                if current != audio_dest:
+                    Path(audio_dest).unlink(missing_ok=True)
+                    Path(current).rename(audio_dest)
+                skip_overlay = True
+            else:
+                tone_start, tone_end = region
         else:
             try:
                 tone_start, tone_end = _parse_room_tone_source(args.room_tone_source)
             except ValueError:
                 print(f"error: invalid --room-tone-source {args.room_tone_source!r}",
                       file=sys.stderr)
-                if current != args.output:
+                if current != audio_dest:
                     Path(current).unlink(missing_ok=True)
+                if render_video:
+                    Path(audio_dest).unlink(missing_ok=True)
                 _cleanup_temps()
                 return 2
-        print(f"      room tone: {tone_start:.2f}-{tone_end:.2f}s "
-              f"({(tone_end-tone_start)*1000:.0f}ms) "
-              f"@ {args.room_tone_level_db:.1f}dB", file=sys.stderr)
-        tone_path = _timestamped(args.input, "tone", "wav")
-        extract_segment(args.input, tone_start, tone_end, tone_path)
-        overlay_room_tone(current, tone_path, args.output,
-                          level_db=args.room_tone_level_db)
-        Path(tone_path).unlink(missing_ok=True)
-        if current != args.output:
-            Path(current).unlink(missing_ok=True)
+        if not skip_overlay:
+            print(f"      room tone: {tone_start:.2f}-{tone_end:.2f}s "
+                  f"({(tone_end-tone_start)*1000:.0f}ms) "
+                  f"@ {args.room_tone_level_db:.1f}dB", file=sys.stderr)
+            tone_path = _timestamped(args.input, "tone", "wav")
+            extract_segment(args.input, tone_start, tone_end, tone_path)
+            overlay_room_tone(current, tone_path, audio_dest,
+                              level_db=args.room_tone_level_db)
+            Path(tone_path).unlink(missing_ok=True)
+            if current != audio_dest:
+                Path(current).unlink(missing_ok=True)
 
-    _cleanup_temps()
-
-    return 0
+    return _finalize(audio_dest)
 
 
 def _cmd_validate(args: argparse.Namespace) -> int:
