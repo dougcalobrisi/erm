@@ -26,6 +26,8 @@ from erm.video import (
     VideoInfo,
     _crf_preset_args,
     audio_mux_args,
+    encoder_supports_crf,
+    encoder_supports_preset,
     mux_av,
     probe_video,
 )
@@ -55,6 +57,22 @@ def test_crf_preset_args_gated_by_encoder():
     assert _crf_preset_args("copy", 18.0, "medium") == []
     # None knobs are omitted even for a supported encoder.
     assert _crf_preset_args("libx264", None, None) == []
+
+
+def test_crf_preset_gated_independently_per_flag():
+    # -crf and -preset are NOT a package deal. libsvtav1 takes both; libvpx-vp9
+    # and libaom-av1 take -crf but have no -preset, so the unsupported flag must
+    # be dropped while the supported one still passes through. (Regression: a
+    # single combined allowlist silently dropped *both* for these encoders, so a
+    # user's `--crf` was ignored with no effect.)
+    assert _crf_preset_args("libsvtav1", 30.0, "6") == [
+        "-crf", "30", "-preset", "6",
+    ]
+    assert _crf_preset_args("libvpx-vp9", 30.0, "medium") == ["-crf", "30"]
+    assert _crf_preset_args("libaom-av1", 28.0, "medium") == ["-crf", "28"]
+    assert encoder_supports_crf("libvpx-vp9") and not encoder_supports_preset("libvpx-vp9")
+    assert encoder_supports_crf("libsvtav1") and encoder_supports_preset("libsvtav1")
+    assert not encoder_supports_crf("mpeg4") and not encoder_supports_preset("mpeg4")
 
 
 def _make_av(path: Path, *, duration: float = DURATION_S, fps: int = FPS,
@@ -238,6 +256,36 @@ def test_remove_video_single_keep(tmp_path, monkeypatch):
               words=words)
     assert rc == 0
     _assert_av_synced(out)
+
+
+def test_remove_video_warns_when_crf_dropped_for_unsupported_encoder(
+        tmp_path, monkeypatch, capsys):
+    # mpeg4 honors neither -crf nor -preset. A user who explicitly sets --crf
+    # should be told it's ignored, not have it silently vanish.
+    clip = tmp_path / "clip.mov"
+    _make_av(clip)
+    out = tmp_path / "out_warn.mov"
+    rc = _run(monkeypatch, [str(clip), "--video", "--vcodec", "mpeg4",
+                            "--crf", "30", "-o", str(out),
+                            "--no-detect-gaps", "--no-room-tone"])
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "--crf" in err and "ignored" in err and "mpeg4" in err
+    _assert_av_synced(out)
+
+
+def test_remove_video_no_warning_when_knobs_unchanged(
+        tmp_path, monkeypatch, capsys):
+    # Default crf/preset (unchanged) must never warn, even on an encoder that
+    # supports neither — we only warn about *user-customized* values being lost.
+    clip = tmp_path / "clip.mov"
+    _make_av(clip)
+    out = tmp_path / "out_nowarn.mov"
+    rc = _run(monkeypatch, [str(clip), "--video", "--vcodec", "mpeg4",
+                            "-o", str(out), "--no-detect-gaps", "--no-room-tone"])
+    assert rc == 0
+    # Default crf/preset (unchanged) never warn, regardless of encoder support.
+    assert "ignored — encoder" not in capsys.readouterr().err
 
 
 def test_remove_video_min_gap_plays_through(tmp_path, monkeypatch):

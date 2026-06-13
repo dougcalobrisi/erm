@@ -118,11 +118,24 @@ exactly.
 
 ## `--crf` / `--preset` only reach encoders that honor them
 
-`-crf` and `-preset` are x264/x265-family options. The default `--vcodec
-libx264` (and `libx265`) takes both; other encoders — `mpeg4`, hardware
-encoders, `copy` — either ignore them with a warning or reject them outright.
-`_crf_preset_args(vcodec, crf, preset)` gates the two flags to the encoders that
-actually support them (`_CRF_PRESET_ENCODERS`) and returns an empty list
-otherwise, so every render/mux command stays clean regardless of `--vcodec`.
-Choosing a non-x264 encoder therefore silently drops `--crf`/`--preset` rather
-than failing — pick that encoder's own quality knob if you need one.
+`-crf` and `-preset` are gated **independently**, because support doesn't come as
+a pair:
+
+- `-crf` (constant quality): the x264/x265 family **plus** `libvpx-vp9`,
+  `libaom-av1`, and `libsvtav1`.
+- `-preset`: the x264/x265 family **and** `libsvtav1` (numeric speed preset).
+  `libvpx-vp9`/`libaom-av1` have no `-preset` (they steer speed via
+  `-deadline`/`-cpu-used`), so it must not be passed there.
+
+`_crf_preset_args(vcodec, crf, preset)` consults `_CRF_ENCODERS` and
+`_PRESET_ENCODERS` separately and emits only the flag(s) the chosen encoder
+accepts — so `--vcodec libvpx-vp9 --crf 30` correctly passes `-crf 30` while
+omitting `-preset`, and every render/mux command stays clean regardless of
+`--vcodec`. For an encoder that honors neither (`mpeg4`, hardware encoders,
+`copy`), both are dropped; when the user *explicitly* set a value that gets
+dropped, the CLI prints a warning (rather than letting it vanish), and you should
+reach for that encoder's own quality knob instead.
+
+> A single combined allowlist used to gate both flags together, which silently
+> dropped `--crf` for VP9/AV1 (encoders that *do* support it) — a user's quality
+> setting was ignored with no effect. The split allowlists fix that.

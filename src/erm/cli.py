@@ -41,6 +41,8 @@ from .validate import validate_output
 from .video import (
     VideoInfo,
     conform_audio_to_duration,
+    encoder_supports_crf,
+    encoder_supports_preset,
     mux_av,
     probe_video,
     render_video_keep_ranges,
@@ -123,7 +125,8 @@ def _build_remove_parser() -> argparse.ArgumentParser:
                    help="--video only. Video encoder for re-encoded output "
                         "(remove mode). Default libx264.")
     p.add_argument("--crf", type=float, default=18.0,
-                   help="--video only. x264/x265 quality (lower = better/larger). "
+                   help="--video only. Constant-quality (lower = better/larger); "
+                        "honored by x264/x265, VP9, and AV1 encoders. "
                         "Default 18 (visually lossless).")
     p.add_argument("--preset", default="medium",
                    help="--video only. Encoder speed/efficiency preset. "
@@ -361,6 +364,25 @@ def _cmd_remove(args: argparse.Namespace) -> int:
             print(f"warning: -o {args.output} is not a video container; "
                   "writing audio-only", file=sys.stderr)
             render_video = False
+
+    # The picture is only re-encoded (and `--crf`/`--preset` only consulted) in
+    # remove mode. Many encoders honor just one of the two flags or neither —
+    # `_crf_preset_args` drops the unsupported one — so warn when a value the user
+    # *explicitly* changed would be silently ignored, rather than letting it
+    # vanish (mirrors the "ignored without --video" warning above).
+    if render_video and args.mode == "remove":
+        dropped = [
+            flag
+            for flag, changed, supported in (
+                ("--crf", args.crf != 18.0, encoder_supports_crf(args.vcodec)),
+                ("--preset", args.preset != "medium",
+                 encoder_supports_preset(args.vcodec)),
+            )
+            if changed and not supported
+        ]
+        if dropped:
+            print(f"warning: {' / '.join(dropped)} ignored — encoder "
+                  f"{args.vcodec!r} does not support it", file=sys.stderr)
 
     output_ext = (Path(args.input).suffix.lstrip(".").lower() or "mp4") \
         if render_video else "wav"

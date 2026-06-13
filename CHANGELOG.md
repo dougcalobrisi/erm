@@ -21,7 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     drift).
   - **`--vcodec` / `--crf` / `--preset`** — encoder knobs for the re-encoded
     picture (remove mode). `--mode silence` stream-copies the picture untouched
-    (lossless, frame-exact).
+    (lossless, frame-exact). `--crf` reaches x264/x265, VP9, and AV1; `--preset`
+    reaches x264/x265 and `libsvtav1`. When an explicitly-set value can't be
+    honored by the chosen encoder, the CLI warns instead of dropping it silently.
   - **`--min-gap-ms` with `--video`** plays the removed footage *through* the
     injected pause (muted) instead of freezing the frame.
   - Audio is stored losslessly where the container allows (PCM in mov/mkv/avi);

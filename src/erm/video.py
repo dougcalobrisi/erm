@@ -107,25 +107,46 @@ def probe_video(path: str | Path) -> VideoInfo:
     )
 
 
-# x264/x265-family encoders accept `-crf` and `-preset`. Other encoders (notably
-# `mpeg4`, used as a lightweight baseline in tests, but also hardware encoders
-# and the older MPEG codecs) reject or silently ignore these options and can spam
-# warnings, so we only pass them through for encoders that actually honor them.
-_CRF_PRESET_ENCODERS = frozenset({"libx264", "libx265", "libx264rgb"})
+# `-crf` and `-preset` are encoder-specific and must be gated *independently* —
+# some encoders honor one but not the other:
+#   - `-crf` (constant-quality): the x264/x265 family plus the common modern
+#     software encoders (VP9, AV1). Hardware encoders (`*_videotoolbox`,
+#     `*_nvenc`) and the legacy codecs (`mpeg4`, `mjpeg`, `rawvideo`) use
+#     different rate-control flags and reject or ignore `-crf`, spamming warnings.
+#   - `-preset`: the x264/x265 family (named presets) and `libsvtav1` (numeric
+#     speed preset). `libvpx-vp9`/`libaom-av1` have NO `-preset` (they steer
+#     speed via `-deadline`/`-cpu-used`), so passing it there is an error.
+# A combined allowlist can't express "crf yes, preset no" (e.g. VP9/AV1), so the
+# two are tracked separately and emitted only where each is actually valid.
+_CRF_ENCODERS = frozenset({
+    "libx264", "libx265", "libx264rgb", "libvpx-vp9", "libaom-av1", "libsvtav1",
+})
+_PRESET_ENCODERS = frozenset({"libx264", "libx265", "libx264rgb", "libsvtav1"})
+
+
+def encoder_supports_crf(vcodec: str) -> bool:
+    """True if `-crf` is a valid constant-quality flag for `vcodec`."""
+    return vcodec in _CRF_ENCODERS
+
+
+def encoder_supports_preset(vcodec: str) -> bool:
+    """True if `-preset` is a valid flag for `vcodec`."""
+    return vcodec in _PRESET_ENCODERS
 
 
 def _crf_preset_args(vcodec: str, crf: float | None, preset: str | None) -> list[str]:
-    """`-crf`/`-preset` ffmpeg args, but only for encoders that support them.
+    """`-crf`/`-preset` ffmpeg args, each only for encoders that support it.
 
-    Returns an empty list for `copy` and for any encoder outside the x264/x265
-    family, so callers can splat this unconditionally into the command.
+    Returns an empty list for `copy`. The two flags are gated independently — an
+    encoder that honors `-crf` but not `-preset` (e.g. `libvpx-vp9`,
+    `libaom-av1`) emits only the supported one — so callers can splat the result
+    unconditionally into the command. The CLI separately warns when a
+    *user-customized* value is dropped here (see `_cmd_remove`).
     """
-    if vcodec not in _CRF_PRESET_ENCODERS:
-        return []
     args: list[str] = []
-    if crf is not None:
+    if crf is not None and encoder_supports_crf(vcodec):
         args += ["-crf", f"{crf:g}"]
-    if preset is not None:
+    if preset is not None and encoder_supports_preset(vcodec):
         args += ["-preset", preset]
     return args
 
@@ -307,7 +328,19 @@ def render_video_with_gaps(
             # holds — but never shows footage belonging to a kept fragment.
             available = (next_start - gstart) if next_start is not None else dur
             read = min(dur, available)
-            if read >= dur or read <= 0:
+            if read <= 0:
+                # No removed footage left at this offset (`gstart` is already at
+                # or past the next keep's start). Reading forward from here would
+                # pull frames out of the *next* kept fragment — the exact spill
+                # the clamp exists to prevent — so freeze the last available
+                # frame for the whole gap instead. Unreachable today (one gap per
+                # splice, every removed span > 0), but cheap to keep watertight.
+                freeze_start = max(0.0, gstart - 1.0 / fr)
+                parts.append(f"[src{src}]trim=start={freeze_start:.6f}:duration={1.0 / fr:.6f},"
+                             f"setpts=PTS-STARTPTS,"
+                             f"tpad=stop_mode=clone:stop_duration={dur:.6f},"
+                             f"trim=end={dur:.6f},setpts=PTS-STARTPTS[{label}]")
+            elif read >= dur:
                 parts.append(f"[src{src}]trim=start={gstart:.6f}:duration={dur:.6f},"
                              f"setpts=PTS-STARTPTS[{label}]")
             else:

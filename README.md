@@ -283,8 +283,8 @@ minimum under it.
 | `--video` | off (audio-only `.wav`) | Render the picture too; output container inferred from the input. |
 | `--video-splice` | `crossfade` | `crossfade` dissolves each splice; `cut` makes hard jump cuts. |
 | `--vcodec` | `libx264` | Encoder for the re-encoded picture (remove mode). |
-| `--crf` | `18` | x264/x265 quality (lower = better/larger). |
-| `--preset` | `medium` | Encoder speed/efficiency preset. |
+| `--crf` | `18` | Constant-quality (lower = better/larger). Applied to x264/x265, VP9, and AV1 encoders; ignored (with a warning) by encoders that don't support `-crf`. |
+| `--preset` | `medium` | Encoder speed/efficiency preset. Applied to x264/x265 and `libsvtav1`; ignored (with a warning) by encoders without `-preset`. |
 
 Without `--video`, the picture flags warn and are ignored. Naming an `-o` video
 container without `--video` is an error (add `--video` or choose a `.wav` path).
