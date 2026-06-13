@@ -7,12 +7,12 @@ description: >-
   run together, detection too aggressive or missing fillers, or questions about
   crossfade, pause spacing, denoise, room tone, models, or detection thresholds.
   For first-time install or a basic clean, use the erm skill instead.
-allowed-tools: Bash
+allowed-tools: Bash, Read, AskUserQuestion
 ---
 
 # erm — tune and troubleshoot
 
-`erm` exposes ~40 flags that cluster into five knob groups. Tune by **symptom**,
+`erm` exposes ~30 flags that cluster into five knob groups. Tune by **symptom**,
 change **one cluster at a time**, and re-check with `--dry-run` + `validate`.
 
 ## Resolving documentation

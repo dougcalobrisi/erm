@@ -7,7 +7,7 @@ description: >-
   recording/podcast/voiceover, strip "ums" and "uhs" from audio, or asks which
   erm command to run. For fixing imperfect output or adjusting knobs, use the
   erm-tune skill instead.
-allowed-tools: Bash
+allowed-tools: Bash, Read, AskUserQuestion
 ---
 
 # erm — install and use
