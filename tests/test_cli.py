@@ -253,6 +253,7 @@ def test_cmd_remove_min_gap_channel_check_skipped_on_dry_run(monkeypatch):
         raise AssertionError("gap_channel_layout should not run on a dry run")
 
     monkeypatch.setattr(cli, "gap_channel_layout", _fail)
+    monkeypatch.setattr(cli, "has_video_stream", lambda _p: False)
     monkeypatch.setattr(
         cli, "transcribe", lambda *a, **k: (_ for _ in ()).throw(SystemExit(0))
     )
@@ -268,6 +269,7 @@ def test_cmd_remove_min_gap_channel_check_skipped_on_dry_run(monkeypatch):
 def test_cmd_remove_silence_mode_warns_ignored_spacing_flags(monkeypatch, capsys):
     # The spacing knobs only shape remove-mode splices, so passing them with
     # --mode silence warns (but does not error — exit stays past validation).
+    monkeypatch.setattr(cli, "has_video_stream", lambda _p: False)
     monkeypatch.setattr(
         cli, "transcribe", lambda *a, **k: (_ for _ in ()).throw(SystemExit(0))
     )
@@ -285,6 +287,7 @@ def test_cmd_remove_silence_mode_warns_ignored_spacing_flags(monkeypatch, capsys
 
 def test_cmd_remove_silence_mode_no_warning_without_spacing_flags(monkeypatch, capsys):
     # Default silence run (no spacing knobs) emits no ignored-flag warning.
+    monkeypatch.setattr(cli, "has_video_stream", lambda _p: False)
     monkeypatch.setattr(
         cli, "transcribe", lambda *a, **k: (_ for _ in ()).throw(SystemExit(0))
     )
@@ -402,6 +405,7 @@ def stubbed_pipeline(monkeypatch):
     monkeypatch.setattr(cli, "load_audio_mono", _fake_load_audio_mono)
     monkeypatch.setattr(cli, "denoise_to", _fake_denoise_to)
     monkeypatch.setattr(cli, "render", _fake_render)
+    monkeypatch.setattr(cli, "has_video_stream", lambda _p: False)
     return created
 
 

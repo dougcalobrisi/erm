@@ -60,6 +60,47 @@ def gap_channel_layout(path: str | Path) -> str:
     return layout
 
 
+def has_video_stream(path: str | Path) -> bool:
+    """Return True if `path` has a real (non-cover-art) video stream.
+
+    ``ffprobe`` reports a still image embedded as cover art (e.g. an mp3's
+    album thumbnail) as a video stream with ``disposition.attached_pic=1``;
+    that is not motion video, so it's excluded. Used to decide whether the
+    input must be routed through :func:`extract_audio_wav` before any
+    librosa-based analysis (which falls back to a slow, deprecated decoder on
+    video containers).
+    """
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v",
+         "-show_entries", "stream_disposition=attached_pic",
+         "-of", "default=noprint_wrappers=1", str(path)],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    # One `DISPOSITION:attached_pic=<0|1>` line per video stream. A real motion
+    # stream has it 0; cover art has it 1. True iff any stream is real video.
+    for line in out.splitlines():
+        key, _, value = line.partition("=")
+        if key.strip() == "DISPOSITION:attached_pic" and value.strip() == "0":
+            return True
+    return False
+
+
+def extract_audio_wav(input_path: str | Path, output_path: str | Path,
+                      *, sample_rate: int = 16_000, channels: int = 1) -> None:
+    """Decode `input_path`'s audio to a mono PCM WAV via ffmpeg.
+
+    `-vn` drops any video stream, so this works on video containers (mp4/mov)
+    that librosa's soundfile backend can't open. The result is the canonical
+    analysis input: 16 kHz mono `pcm_s16le` — exactly what the transcriber and
+    the numpy detectors downsample to anyway, so feeding them this WAV loses
+    nothing while avoiding librosa's deprecated `audioread` fallback.
+    """
+    cmd = ["ffmpeg", "-y", "-i", str(input_path), "-vn",
+           "-ac", str(channels), "-ar", str(sample_rate),
+           "-c:a", "pcm_s16le", str(output_path)]
+    subprocess.run(cmd, check=True, capture_output=True)
+
+
 def extract_segment(input_path: str | Path, start_s: float, end_s: float,
                     output_path: str | Path) -> None:
     cmd = ["ffmpeg", "-y", "-i", str(input_path),

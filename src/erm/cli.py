@@ -18,8 +18,10 @@ from .detect import (
 from .acoustic import is_sustained_vowel
 from .ffmpeg_ops import (
     denoise_to,
+    extract_audio_wav,
     extract_segment,
     gap_channel_layout,
+    has_video_stream,
     overlay_room_tone,
     render,
     render_silenced,
@@ -289,6 +291,22 @@ def _cmd_remove(args: argparse.Namespace) -> int:
         args.json_out = str(_timestamped(args.input, "cuts", "json"))
         print(f"      cuts:   {args.json_out}", file=sys.stderr)
 
+    # When the input carries a real (non-cover-art) video stream, decode its
+    # audio to a temp 16 kHz mono WAV up front. Every librosa-based analysis
+    # below — the numpy gap/intra/overlong detectors and room-tone sampling —
+    # then reads plain PCM instead of falling back to librosa's slow, deprecated
+    # audioread/ffmpeg decoder on the video container. Audio-only inputs are
+    # passed through untouched (byte-identical behavior). This is analysis-only:
+    # rendering and denoising still operate on the full-quality `args.input`.
+    original_audio = args.input
+    analysis_wav: Path | None = None
+    if has_video_stream(args.input):
+        analysis_wav = _timestamped(args.input, "analysis", "wav")
+        print(f"      extracting audio for analysis -> {analysis_wav}",
+              file=sys.stderr)
+        extract_audio_wav(args.input, analysis_wav)
+        original_audio = str(analysis_wav)
+
     # Denoise stages produce two virtual inputs:
     #   `analysis_input` — what transcribe + audio detectors see
     #   `render_input`   — what ffmpeg cuts from
@@ -299,7 +317,7 @@ def _cmd_remove(args: argparse.Namespace) -> int:
     # `post`:   both = original; output is denoised at the end
     # `hybrid`: analysis on original (full detection sensitivity), render from
     #           denoised (clean splices). Best filler coverage AND clean splices.
-    analysis_input = args.input
+    analysis_input = original_audio
     render_input = args.input
     denoised_path: Path | None = None
     if args.denoise in ("pre", "hybrid"):
@@ -312,6 +330,12 @@ def _cmd_remove(args: argparse.Namespace) -> int:
             render_input = str(denoised_path)
         else:  # hybrid
             render_input = str(denoised_path)
+
+    def _cleanup_temps() -> None:
+        """Remove every intermediate temp file this run may have created."""
+        for temp in (analysis_wav, denoised_path):
+            if temp is not None:
+                Path(temp).unlink(missing_ok=True)
 
     print(f"[1/4] transcribing with {args.model}...", file=sys.stderr)
     words, duration = transcribe(
@@ -424,8 +448,7 @@ def _cmd_remove(args: argparse.Namespace) -> int:
 
     if args.dry_run:
         print(json.dumps(cuts_payload, indent=2))
-        if denoised_path is not None:
-            Path(denoised_path).unlink(missing_ok=True)
+        _cleanup_temps()
         return 0
 
     # The empty-output guard only applies to remove mode (where an empty keep
@@ -433,8 +456,7 @@ def _cmd_remove(args: argparse.Namespace) -> int:
     # all-cut clip still produces a full-duration (muted) output.
     if args.mode == "remove" and not keep:
         print("error: no audio left after removing fillers", file=sys.stderr)
-        if denoised_path is not None:
-            Path(denoised_path).unlink(missing_ok=True)
+        _cleanup_temps()
         return 1
 
     needs_post_denoise = args.denoise == "post"
@@ -493,7 +515,7 @@ def _cmd_remove(args: argparse.Namespace) -> int:
         # the real ambient character. Denoising would strip it.
         if args.room_tone_source == "auto":
             if audio is None:
-                audio, sr = load_audio_mono(args.input)
+                audio, sr = load_audio_mono(original_audio)
             region = find_quiet_region(audio, sr, words)
             if region is None:
                 print("      room tone: no quiet region found — skipping",
@@ -501,8 +523,7 @@ def _cmd_remove(args: argparse.Namespace) -> int:
                 if current != args.output:
                     Path(args.output).unlink(missing_ok=True)
                     Path(current).rename(args.output)
-                if denoised_path is not None:
-                    Path(denoised_path).unlink(missing_ok=True)
+                _cleanup_temps()
                 return 0
             tone_start, tone_end = region
         else:
@@ -513,8 +534,7 @@ def _cmd_remove(args: argparse.Namespace) -> int:
                       file=sys.stderr)
                 if current != args.output:
                     Path(current).unlink(missing_ok=True)
-                if denoised_path is not None:
-                    Path(denoised_path).unlink(missing_ok=True)
+                _cleanup_temps()
                 return 2
         print(f"      room tone: {tone_start:.2f}-{tone_end:.2f}s "
               f"({(tone_end-tone_start)*1000:.0f}ms) "
@@ -527,8 +547,7 @@ def _cmd_remove(args: argparse.Namespace) -> int:
         if current != args.output:
             Path(current).unlink(missing_ok=True)
 
-    if denoised_path is not None:
-        Path(denoised_path).unlink(missing_ok=True)
+    _cleanup_temps()
 
     return 0
 

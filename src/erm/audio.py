@@ -11,7 +11,16 @@ from .models import Word
 
 
 def load_audio_mono(path: str | Path, target_sr: int = 16_000) -> tuple[np.ndarray, int]:
-    """Load any ffmpeg-readable audio file as mono float32 at `target_sr`."""
+    """Load an audio file as mono float32 at `target_sr`.
+
+    Backed by ``librosa.load``. Soundfile handles plain audio containers
+    (wav/flac/ogg…); for anything soundfile can't open (notably video
+    containers like mp4/mov) librosa silently falls back to its deprecated
+    ``audioread``/ffmpeg path — that fallback decodes fine but is slow and is
+    slated for removal in librosa 1.0. Callers that may be handed a video file
+    should first extract an analysis WAV via
+    :func:`erm.ffmpeg_ops.extract_audio_wav` and pass that here instead.
+    """
     import librosa  # heavy; lazy
     y, sr = librosa.load(str(path), sr=target_sr, mono=True)
     return y.astype(np.float32), int(sr)
