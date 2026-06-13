@@ -3,7 +3,7 @@
 Copy-paste starting points for the situations that come up most. Each one notes
 *why* those flags. For the reasoning behind a setting, follow the links into
 [usage.md](usage.md) and the internals docs; for full flag defaults, see the
-[README](../README.md).
+[README](https://github.com/dougcalobrisi/erm#readme).
 
 Output and cut-list paths are auto-named next to the input unless you pass `-o` /
 `--json`, so the commands below omit them.

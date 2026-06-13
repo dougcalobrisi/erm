@@ -1,0 +1,66 @@
+site_name: erm
+site_description: Strip disfluencies (um, uh, er, ah, hmm) from spoken audio.
+site_author: Doug Calobrisi
+site_url: https://dougcalobrisi.github.io/erm/
+
+repo_name: dougcalobrisi/erm
+repo_url: https://github.com/dougcalobrisi/erm
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - content.action.edit
+    - search.suggest
+    - search.highlight
+    - toc.follow
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - tables
+  - toc:
+      permalink: true
+      # Match GitHub's heading-slug algorithm so the docs' existing
+      # cross-references (authored for GitHub) resolve on the site too.
+      slugify: !!python/object/apply:pymdownx.slugs.slugify {kwds: {case: lower}}
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.details
+
+nav:
+  - Home: index.md
+  - Usage guides:
+      - Tuning & workflow: usage.md
+      - Recipes: recipes.md
+      - Troubleshooting: troubleshooting.md
+  - Internals (design):
+      - Detection: detection.md
+      - Render pipeline: render-pipeline.md
+      - Denoise & room tone: denoise-and-room-tone.md
+      - Transcription: transcription.md

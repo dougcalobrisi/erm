@@ -30,10 +30,12 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
 build = ["build>=1.2", "twine>=5.0"]
+docs = ["mkdocs-material>=9.5"]
 
 [project.urls]
 Homepage = "https://github.com/dougcalobrisi/erm"
 Repository = "https://github.com/dougcalobrisi/erm"
+Documentation = "https://dougcalobrisi.github.io/erm/"
 Issues = "https://github.com/dougcalobrisi/erm/issues"
 
 [project.scripts]
