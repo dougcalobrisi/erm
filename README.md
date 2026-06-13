@@ -101,8 +101,9 @@ the picture too:
 - Audio is stored losslessly where the container allows (PCM in mov/mkv); mp4
   gets AAC 256k, webm gets Opus.
 
-See [Modes](#modes) and the [render-pipeline design doc](docs/render-pipeline.md)
-for the A/V-sync derivation.
+See [Modes](#modes) and the
+[video render & A/V sync design doc](docs/video-render.md) for the A/V-sync
+derivation.
 
 ## Use inside AI coding agents
 

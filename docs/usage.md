@@ -37,19 +37,10 @@ natural floor — keep room tone on (the default). Details:
 
 Feed `erm` a video file and **by default you get the cleaned audio only**
 (`.wav`) — the fast path when you just want the audio. Add `--video` to render a
-synced video output (container inferred from the input):
-
-| You want… | Run | Result |
-|-----------|-----|--------|
-| Just the audio from a video | `erm talk.mp4` | `talk-cleaned-*.wav`, no picture |
-| A tightened video, fillers cut | `erm talk.mp4 --video` | re-encoded video, crossfaded splices, A/V in sync |
-| Same length, captions intact | `erm talk.mp4 --video --mode silence` | picture stream-copied (lossless), fillers muted in place |
-| Hard jump cuts | `erm talk.mp4 --video --video-splice cut` | concat splices on both streams |
-
-With `--video --min-gap-ms N`, injected pauses **play the removed footage
-through** (muted) rather than freezing. Sync holds within ~1 frame; the
-mechanism is in
-[render-pipeline.md → Part 7](render-pipeline.md#part-7--video-render--av-sync-videopy).
+synced video output (container inferred from the input), and `--mode silence`
+when captions or lip-sync must stay aligned. The full guide — the `--video` /
+mode / `--video-splice` interactions and the min-gap "plays through" behavior —
+is on its own page: **[working with video](video.md)**.
 
 ## Decision: which `--denoise`?
 

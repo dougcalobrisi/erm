@@ -54,6 +54,9 @@ The recommended loop is **`--dry-run` → read the cut list → render** — see
   read-the-cuts → render loop for efficient tuning.
 - **[Recipes](recipes.md)** — copy-paste command lines for common jobs
   (podcast, caption-safe video, multitrack, noisy room, fastest pass, …).
+- **[Working with video](video.md)** — pulling clean audio out of a video vs.
+  rendering a synced picture with `--video`: the mode / splice interactions and
+  the min-gap "plays through" behavior.
 - **[Troubleshooting](troubleshooting.md)** — symptom → knob: describe a bad
   result, find the fix.
 
@@ -68,6 +71,9 @@ one stage:
 - **[Render pipeline](render-pipeline.md)** — turning cuts into audio:
   boundary refinement, close-cut merging, crossfade scaling, the `remove` vs
   `silence` modes, and the `--pad-pause-factor` / `--min-gap-ms` spacing knobs.
+- **[Video render & A/V sync](video-render.md)** — the `--video` path:
+  decoupled render + mux, sync by construction (CFR + frame-snapped shared
+  fades), the tail conform, min-gap "plays through", codecs, and pixel format.
 - **[Denoise & room tone](denoise-and-room-tone.md)** — the
   none/pre/post/hybrid denoise routing and the room-tone overlay that gives the
   output a single uniform noise floor.

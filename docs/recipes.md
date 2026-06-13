@@ -47,7 +47,8 @@ erm input.wav --mode silence
 
 Mutes each filler in place instead of excising it, so the output is the exact
 same length — caption timestamps and lip-sync don't drift. Leave room tone on; it
-fills the muted holes with the natural floor. See
+fills the muted holes with the natural floor. To render the **picture** too (not
+just the audio), add `--video` — see [working with video](video.md). Background:
 [usage.md → which mode](usage.md#decision-which---mode).
 
 ## Multitrack stem you'll re-mix against other tracks

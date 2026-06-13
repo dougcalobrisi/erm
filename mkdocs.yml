@@ -58,9 +58,11 @@ nav:
   - Usage guides:
       - Tuning & workflow: usage.md
       - Recipes: recipes.md
+      - Working with video: video.md
       - Troubleshooting: troubleshooting.md
   - Internals (design):
       - Detection: detection.md
       - Render pipeline: render-pipeline.md
+      - Video render & A/V sync: video-render.md
       - Denoise & room tone: denoise-and-room-tone.md
       - Transcription: transcription.md
