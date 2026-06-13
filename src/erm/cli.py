@@ -38,7 +38,13 @@ from .ranges import (
 )
 from .refine import refine_boundaries
 from .validate import validate_output
-from .video import VideoInfo, mux_av, probe_video, render_video_keep_ranges
+from .video import (
+    VideoInfo,
+    mux_av,
+    probe_video,
+    render_video_keep_ranges,
+    render_video_with_gaps,
+)
 
 
 def _build_remove_parser() -> argparse.ArgumentParser:
@@ -495,6 +501,14 @@ def _cmd_remove(args: argparse.Namespace) -> int:
                 keep_index += 1
             else:
                 gap_inserts.append((keep_index, duration))
+        # For a video render, snap each injected gap to a whole video frame so
+        # the audio's `anullsrc` silence and the video's played-through footage
+        # inject identical lengths (the conform then fixes only the tiny tail
+        # residual). Audio-only runs keep the exact float durations.
+        if render_video and video_info.fps:
+            fr_snap = video_info.fps
+            gap_inserts = [(idx, round(dur * fr_snap) / fr_snap)
+                           for idx, dur in gap_inserts]
         injected = sum(duration for _, duration in gap_inserts)
 
     cuts_payload = {
@@ -531,14 +545,6 @@ def _cmd_remove(args: argparse.Namespace) -> int:
         _cleanup_temps()
         return 1
 
-    # TODO(phase 4): min-gap + video (frozen/plays-through fillers). Silence and
-    # remove (cut/crossfade) video are wired below; min-gap video is not, so fail
-    # loudly rather than emit an out-of-sync result.
-    if render_video and gap_inserts:
-        print("error: --video with --min-gap-ms is not wired yet (landing in a "
-              "follow-up phase); drop --min-gap-ms, or drop --video", file=sys.stderr)
-        _cleanup_temps()
-        return 1
     if render_video and video_info.fps is None:
         print("error: could not determine the input's frame rate; cannot render "
               "video. Re-run with --no... drop --video for audio-only output.",
@@ -592,6 +598,7 @@ def _cmd_remove(args: argparse.Namespace) -> int:
                 min_crossfade_ms=args.min_crossfade_ms,
                 max_crossfade_ms=args.max_crossfade_ms,
                 crossfade_factor=args.crossfade_factor,
+                min_gap_s=args.min_gap_ms / 1000.0,
                 snap_fps=fr,
             )
 
@@ -614,12 +621,21 @@ def _cmd_remove(args: argparse.Namespace) -> int:
             print(f"      rendering video ({args.video_splice})...", file=sys.stderr)
             # Conform the picture to the audio master's sample-exact length so
             # both streams end frame-for-frame together.
-            render_video_keep_ranges(
-                args.input, keep, video_fades or [], fr, video_temp,
-                splice_style=args.video_splice, vcodec=args.vcodec,
-                crf=args.crf, preset=args.preset,
-                target_duration=ffprobe_duration(audio_master),
-            )
+            target = ffprobe_duration(audio_master)
+            if gap_inserts:
+                # min-gap: gaps play the real removed footage through, muted.
+                render_video_with_gaps(
+                    args.input, keep, gap_inserts, video_fades or [], fr,
+                    video_temp, splice_style=args.video_splice,
+                    vcodec=args.vcodec, crf=args.crf, preset=args.preset,
+                    target_duration=target,
+                )
+            else:
+                render_video_keep_ranges(
+                    args.input, keep, video_fades or [], fr, video_temp,
+                    splice_style=args.video_splice, vcodec=args.vcodec,
+                    crf=args.crf, preset=args.preset, target_duration=target,
+                )
             video_source = str(video_temp)
             mux_vcodec = "copy"
         print(f"      muxing video -> {args.output}", file=sys.stderr)

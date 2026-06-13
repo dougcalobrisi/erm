@@ -309,6 +309,7 @@ def _render_with_gaps(
     crossfade_factor: float,
     words: Sequence[Word] | None,
     min_gap_s: float = 0.0,
+    fades: Sequence[float] | None = None,
 ) -> None:
     """Render keeps with injected silent gaps, as a linear filtergraph fold.
 
@@ -324,7 +325,7 @@ def _render_with_gaps(
     crossfades are trimmed to keep their flanking words at or above the floor —
     the splices that *were* injected already honor it exactly via `concat`.
     """
-    fades = _keep_fades(
+    fades = list(fades) if fades is not None else _keep_fades(
         keep_ranges, words,
         crossfade_ms=crossfade_ms,
         min_crossfade_ms=min_crossfade_ms,
@@ -444,6 +445,7 @@ def render(
             crossfade_factor=crossfade_factor,
             words=words,
             min_gap_s=min_gap_s,
+            fades=fades,
         )
         return
 

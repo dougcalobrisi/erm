@@ -11,6 +11,7 @@ dependency.
 from __future__ import annotations
 
 import subprocess
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -207,6 +208,119 @@ def render_video_keep_ranges(
 
     cmd = ["ffmpeg", "-y", "-i", str(input_path),
            "-filter_complex", ";".join(parts), "-map", "[outv]", *tail]
+    subprocess.run(cmd, check=True, capture_output=True)
+
+
+def render_video_with_gaps(
+    input_path: str | Path,
+    keep_ranges: list[tuple[float, float]],
+    gap_inserts: list[tuple[int, float]],
+    fades: list[float],
+    fr: float,
+    output_path: str | Path,
+    *,
+    splice_style: str = "crossfade",
+    vcodec: str = "libx264",
+    crf: float = 18.0,
+    preset: str = "medium",
+    target_duration: float | None = None,
+) -> None:
+    """Min-gap video: mirror `ffmpeg_ops._render_with_gaps` node-for-node.
+
+    The audio path injects `anullsrc` silence at tight splices to honor the gap
+    floor; the picture **plays through** instead of freezing — each injected gap
+    is filled with the *real removed footage* at that splice (a `trim` of the
+    original starting where the kept fragment ended), muted, for the same
+    frame-snapped gap duration. So the disfluency we cut still rolls under the
+    injected pause and the motion never stalls.
+
+    The graph folds left exactly like the audio: keep→keep joins `xfade`
+    (crossfade, fade > 0) or `concat`; any join touching a gap uses `concat`, so
+    the injected duration lands as-is. `target_duration` conforms the result to
+    the audio master's length.
+    """
+    keep_ranges = list(keep_ranges)
+    n_keep = len(keep_ranges)
+
+    gaps_after: dict[int, list[float]] = defaultdict(list)
+    for after_keep_index, duration in gap_inserts:
+        gaps_after[after_keep_index].append(float(duration))
+    n_gap = sum(len(v) for v in gaps_after.values())
+    n_split = n_keep + n_gap
+
+    parts: list[str] = [
+        f"[0:v]fps={fr:.6f},format=yuv420p,split={n_split}"
+        + "".join(f"[src{i}]" for i in range(n_split))
+    ]
+
+    # Keep nodes: trim each kept fragment from a CFR copy of the source.
+    src = 0
+    lengths: dict[str, float] = {}
+    for i, (s, e) in enumerate(keep_ranges):
+        parts.append(f"[src{src}]trim=start={s:.6f}:end={e:.6f},"
+                     f"setpts=PTS-STARTPTS[k{i}]")
+        lengths[f"k{i}"] = e - s
+        src += 1
+
+    # Gap nodes: the removed footage right after keep i, played through muted.
+    gap_label: dict[tuple[int, int], str] = {}
+    for i in range(n_keep):
+        for j, dur in enumerate(gaps_after.get(i, [])):
+            # Stack consecutive gaps after the same keep along the removed span.
+            prior = sum(gaps_after[i][:j])
+            gstart = keep_ranges[i][1] + prior
+            label = f"g{i}_{j}"
+            parts.append(f"[src{src}]trim=start={gstart:.6f}:duration={dur:.6f},"
+                         f"setpts=PTS-STARTPTS[{label}]")
+            lengths[label] = dur
+            gap_label[(i, j)] = label
+            src += 1
+
+    # Node sequence: each keep, then any gaps spliced after it (audio's order).
+    nodes: list[tuple[str, str, int | None]] = []
+    for i in range(n_keep):
+        nodes.append(("keep", f"k{i}", i))
+        for j in range(len(gaps_after.get(i, []))):
+            nodes.append(("gap", gap_label[(i, j)], None))
+
+    final = "vraw" if target_duration is not None else "outv"
+    if len(nodes) == 1:
+        # Degenerate (single keep, no gaps) — just pass it through.
+        parts.append(f"[{nodes[0][1]}]setpts=PTS-STARTPTS[{final}]")
+    else:
+        prev = nodes[0][1]
+        cumulative = lengths[prev]  # true float length of the fold so far
+        for idx in range(1, len(nodes)):
+            kind, label, keep_index = nodes[idx]
+            prev_kind = nodes[idx - 1][0]
+            out = final if idx == len(nodes) - 1 else f"m{idx}"
+            do_xfade = (
+                prev_kind == "keep" and kind == "keep"
+                and splice_style != "cut" and fades[keep_index - 1] > 0
+            )
+            if do_xfade:
+                d = fades[keep_index - 1]
+                offset = cumulative - d
+                parts.append(
+                    f"[{prev}][{label}]xfade=transition=fade:"
+                    f"duration={d:.6f}:offset={offset:.6f}[{out}]"
+                )
+                cumulative += lengths[label] - d
+            else:
+                parts.append(f"[{prev}][{label}]concat=n=2:v=1:a=0[{out}]")
+                cumulative += lengths[label]
+            prev = out
+
+    if target_duration is not None:
+        parts.append(
+            f"[vraw]tpad=stop_mode=clone:stop_duration={target_duration:.6f},"
+            f"trim=end={target_duration:.6f},setpts=PTS-STARTPTS[outv]"
+        )
+
+    cmd = ["ffmpeg", "-y", "-i", str(input_path),
+           "-filter_complex", ";".join(parts), "-map", "[outv]",
+           "-c:v", vcodec, "-crf", f"{crf:g}", "-preset", preset,
+           "-pix_fmt", "yuv420p", "-an", str(output_path)]
     subprocess.run(cmd, check=True, capture_output=True)
 
 
