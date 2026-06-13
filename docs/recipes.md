@@ -102,13 +102,27 @@ Slower, more thorough.
 
 ## Custom filler vocabulary
 
+Three flags shape pass 1's word list. They compose in order — `--fillers`
+defines the set, `--add-fillers` unions on top, `--remove-fillers` subtracts
+(removal wins):
+
 ```sh
+# Replace the built-in list entirely.
 erm input.wav --fillers "um,uh,er,like"
+
+# Keep the defaults and add your own verbal tics — the common case.
+erm input.wav --add-fillers "basically,like,you-know"
+
+# Keep the defaults but drop one that over-matches your voice.
+erm input.wav --remove-fillers "ah"
 ```
 
-Overrides the built-in stem list. Caveat: automatic elongation matching
-(`ummmm` → `um`) only applies to the **built-in** stems — a custom word like
-`like` matches verbatim only. See
+Reach for `--add-fillers` instead of `--fillers` when you just want the
+defaults plus a few words: `--fillers` makes you re-type the whole built-in
+list, and forgetting a stem silently drops it.
+
+Caveat: automatic elongation matching (`ummmm` → `um`) only applies to the
+**built-in** stems — a custom word like `basically` matches verbatim only. See
 [detection.md → pass 1](detection.md#pass-1--word-list-match-fillerspy).
 
 ---
