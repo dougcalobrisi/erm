@@ -66,7 +66,9 @@ def _build_remove_parser() -> argparse.ArgumentParser:
     p.add_argument("--remove-fillers", dest="remove_fillers", default="",
                    help="Comma-separated words to drop from the set after "
                         "--fillers/--add-fillers are applied (e.g. 'ah' if it "
-                        "over-matches). Removal wins over additions.")
+                        "over-matches). Removal wins over additions. Emptying "
+                        "the set disables pass-1 word matching entirely (the "
+                        "gap and intra-word detectors still run).")
     p.add_argument("--search-ms", type=float, default=60.0)
     p.add_argument("--crossfade-ms", type=float, default=None,
                    help="Fixed crossfade length for every splice. When omitted "

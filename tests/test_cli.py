@@ -54,6 +54,7 @@ def test_parse_filler_set(spec, expected):
         ("um,uh", "like", "like", {"um", "uh"}),          # remove wins over add
         ("um,uh", "um", "", {"um", "uh"}),                # adding a dup is a no-op
         ("um,uh", "", "nope", {"um", "uh"}),              # removing absent is a no-op
+        ("um", "", "um", set()),                          # emptying the set is allowed
     ],
 )
 def test_resolve_filler_set(base, add, remove, expected):
