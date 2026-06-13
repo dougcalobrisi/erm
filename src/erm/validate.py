@@ -15,7 +15,7 @@ def validate_output(
     input_path: str | Path,
     output_path: str | Path,
     cuts_path: str | Path | None,
-    model_name: str = "medium.en",
+    model_name: str = "large-v3",
     fillers: Iterable[str] = DEFAULT_FILLERS,
     duration_tolerance_ms: float = 50.0,
     device: str = "auto",

@@ -43,8 +43,8 @@ def _build_remove_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("input", help="Input audio file.")
     p.add_argument("-o", "--output", help="Output audio file (.wav).")
-    p.add_argument("--model", default="medium.en",
-                   help="faster-whisper model (default: medium.en).")
+    p.add_argument("--model", default="large-v3",
+                   help="faster-whisper model (default: large-v3).")
     p.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto",
                    help="Compute device for transcription. 'auto' (default) "
                         "uses the GPU when available and silently falls back to "
@@ -159,7 +159,7 @@ def _build_validate_parser() -> argparse.ArgumentParser:
     p.add_argument("input")
     p.add_argument("output")
     p.add_argument("--cuts", help="Cut list JSON written by `remove`.")
-    p.add_argument("--model", default="medium.en")
+    p.add_argument("--model", default="large-v3")
     p.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto",
                    help="Compute device for transcription (see `erm remove --help`).")
     p.add_argument("--compute-type", dest="compute_type", default="auto",

@@ -15,9 +15,9 @@ narrows the fix immediately.
 The detector never flagged it, or it flagged it too conservatively. Check the
 `--dry-run` JSON: is there a cut near the filler at all?
 
-- **No cut there** → detection missed it. Try a larger `--model` (e.g.
-  `large-v3`); lower `--gap-min-ms` (default 350) so shorter pauses get scanned;
-  make sure `--detect-gaps` is on.
+- **No cut there** → detection missed it. The default `--model large-v3` is
+  already the most accurate; lower `--gap-min-ms` (default 350) so shorter pauses
+  get scanned; make sure `--detect-gaps` is on.
 - **A cut there but too short** → it's being trimmed conservatively. For trailing
   "uhhh" drawls that survive, `--no-confirm-pitch` lets the overlong detector cut
   without acoustic confirmation — but it raises the risk of clipping slow real

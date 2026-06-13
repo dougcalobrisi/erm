@@ -33,7 +33,7 @@ def _is_recoverable_cuda_error(exc: Exception) -> bool:
 
 def transcribe(
     path: str | Path,
-    model_name: str = "medium.en",
+    model_name: str = "large-v3",
     verbatim: bool = True,
     device: str = "auto",
     compute_type: str = "auto",

@@ -93,11 +93,12 @@ runtime installed (see [transcription.md](transcription.md)).
 ## Maximum filler coverage
 
 ```sh
-erm input.wav --model large-v3 --gap-min-ms 250
+erm input.wav --gap-min-ms 250
 ```
 
-The largest model catches more fillers and lands tighter boundaries; the lower
-gap threshold scans shorter pauses for dropped fillers. Slower, more thorough.
+`large-v3` (the default) already catches the most fillers and lands the tightest
+boundaries; the lower gap threshold scans shorter pauses for dropped fillers.
+Slower, more thorough.
 
 ## Custom filler vocabulary
 
