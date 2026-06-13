@@ -36,6 +36,7 @@ from .ranges import (
 )
 from .refine import refine_boundaries
 from .validate import validate_output
+from .video import VideoInfo, probe_video
 
 
 def _build_remove_parser() -> argparse.ArgumentParser:
@@ -94,6 +95,29 @@ def _build_remove_parser() -> argparse.ArgumentParser:
                         "sync, multi-track alignment, and caption timing). The "
                         "room-tone overlay fills the muted holes with the "
                         "natural floor.")
+    p.add_argument("--video", action="store_true",
+                   help="Render the picture too, keeping A/V in sync, and write "
+                        "a video output whose container is inferred from the "
+                        "input (mp4->mp4, mov->mov...). Default OFF: every input, "
+                        "including a video file, produces the cleaned audio as "
+                        ".wav (the common 'pull the audio out of this video' "
+                        "case). The flags below only apply with --video.")
+    p.add_argument("--video-splice", dest="video_splice",
+                   choices=("crossfade", "cut"), default="crossfade",
+                   help="--video only. How to join kept fragments visually. "
+                        "'crossfade' (default): proportional dissolve matching "
+                        "the audio crossfade at each splice. 'cut': hard jump "
+                        "cuts (audio is hard-cut too, declicked, so A/V can't "
+                        "drift).")
+    p.add_argument("--vcodec", default="libx264",
+                   help="--video only. Video encoder for re-encoded output "
+                        "(remove mode). Default libx264.")
+    p.add_argument("--crf", type=float, default=18.0,
+                   help="--video only. x264/x265 quality (lower = better/larger). "
+                        "Default 18 (visually lossless).")
+    p.add_argument("--preset", default="medium",
+                   help="--video only. Encoder speed/efficiency preset. "
+                        "Default medium.")
     p.add_argument("--pad-pause-factor", dest="pad_pause_factor", type=float,
                    default=0.0,
                    help="remove mode only. Retain this fraction of the silence "
@@ -284,8 +308,54 @@ def _cmd_remove(args: argparse.Namespace) -> int:
             print(f"warning: {' / '.join(ignored)} ignored in --mode silence "
                   "(they only shape remove-mode splices)", file=sys.stderr)
 
+    # ----- Video output gating ------------------------------------------------
+    # Video is opt-in (--video). Without it, every input — including a video
+    # file — yields the cleaned audio as .wav (today's behavior, unchanged, and
+    # the common "pull the audio out of this video" case). With --video and a
+    # real video stream present, the output container is inferred from the input.
+    VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi"}
+    video_info = probe_video(args.input) if args.video else VideoInfo(has_video=False)
+    render_video = args.video and video_info.has_video
+    if args.video and not video_info.has_video:
+        print("warning: --video given but the input has no motion-video stream; "
+              "writing audio-only output", file=sys.stderr)
+
+    # Warn about video-only knobs passed without --video (inert), mirroring the
+    # silence-mode spacing-knob warning above.
+    if not args.video:
+        vid_ignored = [
+            flag
+            for flag, changed in (
+                ("--video-splice", args.video_splice != "crossfade"),
+                ("--vcodec", args.vcodec != "libx264"),
+                ("--crf", args.crf != 18.0),
+                ("--preset", args.preset != "medium"),
+            )
+            if changed
+        ]
+        if vid_ignored:
+            print(f"warning: {' / '.join(vid_ignored)} ignored without --video",
+                  file=sys.stderr)
+
+    # `-o`'s extension always wins, but a video container without --video is a
+    # footgun (we'd silently write audio into a .mp4); reject it. Conversely a
+    # non-video `-o` with --video can't hold a picture, so fall back to audio.
+    if args.output:
+        out_is_video_container = Path(args.output).suffix.lower() in VIDEO_EXTS
+        if out_is_video_container and not args.video:
+            print(f"error: -o {args.output} names a video container but --video "
+                  "was not given. Add --video to render the picture, or choose a "
+                  ".wav output.", file=sys.stderr)
+            return 2
+        if render_video and not out_is_video_container:
+            print(f"warning: -o {args.output} is not a video container; "
+                  "writing audio-only", file=sys.stderr)
+            render_video = False
+
+    output_ext = (Path(args.input).suffix.lstrip(".").lower() or "mp4") \
+        if render_video else "wav"
     if not args.output and not args.dry_run:
-        args.output = str(_timestamped(args.input, "cleaned", "wav"))
+        args.output = str(_timestamped(args.input, "cleaned", output_ext))
         print(f"      output: {args.output}", file=sys.stderr)
     if not args.json_out:
         args.json_out = str(_timestamped(args.input, "cuts", "json"))
@@ -456,6 +526,14 @@ def _cmd_remove(args: argparse.Namespace) -> int:
     # all-cut clip still produces a full-duration (muted) output.
     if args.mode == "remove" and not keep:
         print("error: no audio left after removing fillers", file=sys.stderr)
+        _cleanup_temps()
+        return 1
+
+    # TODO(phase 2-4): wire the video render + mux here. Until then, fail loudly
+    # rather than silently emit audio into a video-named output.
+    if render_video:
+        print("error: --video rendering is not wired yet (landing in a "
+              "follow-up phase)", file=sys.stderr)
         _cleanup_temps()
         return 1
 
