@@ -755,6 +755,12 @@ def _cmd_remove(args: argparse.Namespace) -> int:
         # these on its own failure, so these unlinks are idempotent (missing_ok).
         if render_video:
             Path(audio_dest).unlink(missing_ok=True)
+        # `render_target` is the `*-raw-*.wav` intermediate when post-denoise or
+        # room-tone is enabled; the success path unlinks it after consuming it,
+        # but a mid-pipeline failure (before that point) would leave it behind.
+        # Drop it here too — idempotent, and skipped when it *is* audio_dest.
+        if render_target != audio_dest:
+            Path(render_target).unlink(missing_ok=True)
         _cleanup_temps()
         raise
 

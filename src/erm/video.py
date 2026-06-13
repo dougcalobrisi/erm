@@ -107,6 +107,29 @@ def probe_video(path: str | Path) -> VideoInfo:
     )
 
 
+# x264/x265-family encoders accept `-crf` and `-preset`. Other encoders (notably
+# `mpeg4`, used as a lightweight baseline in tests, but also hardware encoders
+# and the older MPEG codecs) reject or silently ignore these options and can spam
+# warnings, so we only pass them through for encoders that actually honor them.
+_CRF_PRESET_ENCODERS = frozenset({"libx264", "libx265", "libx264rgb"})
+
+
+def _crf_preset_args(vcodec: str, crf: float | None, preset: str | None) -> list[str]:
+    """`-crf`/`-preset` ffmpeg args, but only for encoders that support them.
+
+    Returns an empty list for `copy` and for any encoder outside the x264/x265
+    family, so callers can splat this unconditionally into the command.
+    """
+    if vcodec not in _CRF_PRESET_ENCODERS:
+        return []
+    args: list[str] = []
+    if crf is not None:
+        args += ["-crf", f"{crf:g}"]
+    if preset is not None:
+        args += ["-preset", preset]
+    return args
+
+
 def render_video_keep_ranges(
     input_path: str | Path,
     keep_ranges: list[tuple[float, float]],
@@ -161,7 +184,7 @@ def render_video_keep_ranges(
         return (f"[{label_in}]tpad=stop_mode=clone:stop_duration={target_duration:.6f},"
                 f"trim=end={target_duration:.6f},setpts=PTS-STARTPTS[outv]")
 
-    tail = ["-c:v", vcodec, "-crf", f"{crf:g}", "-preset", preset,
+    tail = ["-c:v", vcodec, *_crf_preset_args(vcodec, crf, preset),
             "-pix_fmt", "yuv420p", "-an", str(output_path)]
 
     if n == 1:
@@ -339,7 +362,7 @@ def render_video_with_gaps(
 
     cmd = ["ffmpeg", "-y", "-i", str(input_path),
            "-filter_complex", ";".join(parts), "-map", "[outv]",
-           "-c:v", vcodec, "-crf", f"{crf:g}", "-preset", preset,
+           "-c:v", vcodec, *_crf_preset_args(vcodec, crf, preset),
            "-pix_fmt", "yuv420p", "-an", str(output_path)]
     run_ffmpeg(cmd)
 
@@ -425,12 +448,8 @@ def mux_av(video_path: str | Path, audio_path: str | Path,
     """
     ext = Path(output_path).suffix
     cmd = ["ffmpeg", "-y", "-i", str(video_path), "-i", str(audio_path),
-           "-map", "0:v:0", "-map", "1:a:0", "-c:v", vcodec]
-    if vcodec != "copy":
-        if crf is not None:
-            cmd += ["-crf", f"{crf:g}"]
-        if preset is not None:
-            cmd += ["-preset", preset]
+           "-map", "0:v:0", "-map", "1:a:0", "-c:v", vcodec,
+           *_crf_preset_args(vcodec, crf, preset)]
     cmd += audio_mux_args(ext)
     if ext.lower() in (".mp4", ".m4v", ".mov"):
         cmd += ["-movflags", "+faststart"]

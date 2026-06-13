@@ -115,3 +115,14 @@ chroma-subsampled to 4:2:0 on output — a loss beyond `--crf`, but invisible fo
 the talking-head/screen-recording footage `erm` targets. Silence mode never
 re-encodes the picture (`-c:v copy`), so it preserves the source pixel format
 exactly.
+
+## `--crf` / `--preset` only reach encoders that honor them
+
+`-crf` and `-preset` are x264/x265-family options. The default `--vcodec
+libx264` (and `libx265`) takes both; other encoders — `mpeg4`, hardware
+encoders, `copy` — either ignore them with a warning or reject them outright.
+`_crf_preset_args(vcodec, crf, preset)` gates the two flags to the encoders that
+actually support them (`_CRF_PRESET_ENCODERS`) and returns an empty list
+otherwise, so every render/mux command stays clean regardless of `--vcodec`.
+Choosing a non-x264 encoder therefore silently drops `--crf`/`--preset` rather
+than failing — pick that encoder's own quality knob if you need one.

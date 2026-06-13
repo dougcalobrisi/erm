@@ -22,7 +22,13 @@ import pytest
 from erm import cli
 from erm.ffmpeg_ops import run_ffmpeg
 from erm.models import Word
-from erm.video import VideoInfo, audio_mux_args, mux_av, probe_video
+from erm.video import (
+    VideoInfo,
+    _crf_preset_args,
+    audio_mux_args,
+    mux_av,
+    probe_video,
+)
 
 
 pytestmark = pytest.mark.skipif(
@@ -34,6 +40,21 @@ FPS = 25
 SR = 44_100
 DURATION_S = 6.0
 ONE_FRAME_MS = 1000.0 / FPS
+
+
+def test_crf_preset_args_gated_by_encoder():
+    # x264/x265-family encoders honor -crf/-preset; everything else (mpeg4,
+    # "copy", hardware encoders) must not receive them or ffmpeg warns/errors.
+    assert _crf_preset_args("libx264", 18.0, "medium") == [
+        "-crf", "18", "-preset", "medium",
+    ]
+    assert _crf_preset_args("libx265", 20.0, "slow") == [
+        "-crf", "20", "-preset", "slow",
+    ]
+    assert _crf_preset_args("mpeg4", 18.0, "medium") == []
+    assert _crf_preset_args("copy", 18.0, "medium") == []
+    # None knobs are omitted even for a supported encoder.
+    assert _crf_preset_args("libx264", None, None) == []
 
 
 def _make_av(path: Path, *, duration: float = DURATION_S, fps: int = FPS,
