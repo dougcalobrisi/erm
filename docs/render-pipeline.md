@@ -273,3 +273,75 @@ matching duration expectation:
 
 The assumed mode is surfaced in the `duration_math` check detail. See the
 README's `validate` section for the end-user view.
+
+---
+
+# Part 7 — Video render & A/V sync (`video.py`)
+
+The edit timeline (keep-ranges + per-splice fades + injected gaps) is
+format-agnostic. With `--video`, `erm` renders the **picture** from that same
+timeline and muxes it onto the separately-rendered clean-PCM audio master. The
+audio path is untouched for audio-only runs; all video logic lives in
+`video.py`.
+
+## Why decoupled render + mux (not one process)
+
+The audio pipeline is multi-pass — splice → optional `afftdn` denoise → optional
+room-tone `amix`, each its own ffmpeg run — so it can't share a single
+filtergraph with the video. Instead the audio finishes to a temp WAV master and
+the video is rendered in one `filter_complex` pass, then `mux_av` combines them.
+Sync does **not** rely on muxing tricks; it's built in at the timeline level
+(below) plus a final conform.
+
+## Sync by construction: CFR + frame-snapped fades
+
+Two facts collide: `atrim`/`acrossfade` are **sample-accurate**, but video
+`trim`/`xfade` land on **frame boundaries**. Three measures keep the streams
+together:
+
+1. **Force CFR.** `render_video_keep_ranges` puts `fps=FR` at the head of the
+   graph (`FR` from the input's `avg_frame_rate`, VFR-safe). Without this,
+   variable-frame-rate input breaks the duration math non-deterministically.
+2. **Frame-snapped, shared fades.** `_keep_fades(..., snap_fps=FR)` rounds each
+   crossfade to a whole frame, and the CLI passes the *same* list to both the
+   audio `acrossfade` (via `render(fades=…)`) and the video `xfade`. Both
+   streams therefore shorten by an identical amount at every splice, so the
+   `Σkeeps − Σfades (+ Σgaps)` total holds for each. A positive fade is floored
+   at **two frames** — a one-frame `xfade` corrupts a chained filtergraph.
+3. **Float-cumulative xfade offsets.** Each `xfade` offset is `Oᵢ = (true float
+   cumulative length) − dᵢ`, computed from the exact timeline rather than summed
+   rounded values, so per-fragment frame-quantization re-aligns at every splice
+   instead of accumulating.
+
+`cut` splices `concat` **both** streams (zero fades), so neither overlaps and
+neither drifts; the audio is the same hard-cut concat the audio path already
+uses when a fade is zero.
+
+## The tail conform
+
+`concat` (the `cut` path) has no fade to absorb the video's frame-quantized cut
+points, so its total can sit a frame or two off. `render_video_keep_ranges`
+takes a `target_duration` (the audio master's sample-exact length) and appends
+`tpad=stop_mode=clone:stop_duration=…,trim=end=target` — clone-padding a short
+picture and trimming a long one to exactly the target. The downstream `trim`
+caps the stream, so the large `stop_duration` never actually generates more than
+`target` worth of frames. Net A/V parity: **≤ 1 frame**, checked by
+`validate_output`'s `av_sync` check (`|video_dur − audio_dur| ≤ 1/FR`).
+
+## Min-gap "plays through" (`render_video_with_gaps`)
+
+Mirrors `_render_with_gaps` node-for-node: keep nodes via `trim`, keep→keep
+joins `xfade`/`concat`, gap-adjacent joins `concat`. Where the audio injects
+`anullsrc` silence, the video injects the **real removed footage** at that
+splice (a `trim` of the original starting where the kept fragment ended), muted —
+so the excised disfluency rolls under the injected pause instead of the frame
+freezing. Injected gap durations are frame-snapped (CLI side) so audio and video
+inject identical lengths.
+
+## Codec by container (`audio_mux_args`)
+
+The pipeline produces a clean PCM master; the mux preserves it where the
+container allows — `-c:a copy` (PCM) into mov/mkv/avi, **AAC 256k** for mp4
+(no universal lossless), **Opus 160k** for webm. The picture is `-c:v copy`'d
+through the mux (silence mode copies the source untouched; remove mode copies
+the already-encoded splice), never re-encoded twice.

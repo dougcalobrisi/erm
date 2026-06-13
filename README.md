@@ -70,10 +70,39 @@ erm input.wav --dry-run
 
 # Validate a rendered output against its source.
 erm validate input.wav cleaned.wav --cuts cuts.json
+
+# Pull just the cleaned AUDIO out of a video (default — no picture rendered).
+erm talk.mp4            # -> talk-cleaned-*.wav
+
+# Keep the PICTURE: render a synced video output (container inferred from input).
+erm talk.mp4 --video    # -> talk-cleaned-*.mp4, audio + video in sync
 ```
 
 When `-o` / `--json` are omitted, output paths are written next to the input as
 `{stem}-cleaned-{YYYYMMDD-HHMMSS}.wav` and `{stem}-cuts-{YYYYMMDD-HHMMSS}.json`.
+
+### Video
+
+A video input works like any other recording, and **by default `erm` emits the
+cleaned audio only** (`.wav`) — the common "pull the audio out of this video"
+case, and identical to how `erm` has always behaved. Pass `--video` to render
+the picture too:
+
+- The output **container is inferred from the input** (mp4→mp4, mov→mov…); an
+  `-o` extension always overrides.
+- Audio and video stay **in sync by construction** (within ~1 frame): both
+  streams are rendered from the same edit timeline with the same frame-snapped
+  crossfades, and the picture is conformed to the audio's exact length.
+- `--mode silence` stream-copies the picture untouched (lossless, frame-exact).
+  `--mode remove` re-encodes the spliced picture; `--video-splice crossfade`
+  (default) dissolves each splice, `--video-splice cut` makes hard jump cuts.
+- `--min-gap-ms` with `--video` **plays the removed footage through** the
+  injected pause (muted) rather than freezing the frame.
+- Audio is stored losslessly where the container allows (PCM in mov/mkv); mp4
+  gets AAC 256k, webm gets Opus.
+
+See [Modes](#modes) and the [render-pipeline design doc](docs/render-pipeline.md)
+for the A/V-sync derivation.
 
 ## Use inside AI coding agents
 
@@ -242,9 +271,22 @@ minimum under it.
 
 | Flag | Default | Notes |
 |------|---------|-------|
-| `-o`, `--output` | auto-named next to input | Output `.wav` path. |
+| `-o`, `--output` | auto-named next to input | Output path; its extension overrides the inferred container. |
 | `--json PATH` | auto-named next to input | Cut list JSON. |
 | `--dry-run` | off | Print the cut list and exit; no audio rendered. |
+
+### Video
+
+| Flag | Default | Notes |
+|------|---------|-------|
+| `--video` | off (audio-only `.wav`) | Render the picture too; output container inferred from the input. |
+| `--video-splice` | `crossfade` | `crossfade` dissolves each splice; `cut` makes hard jump cuts. |
+| `--vcodec` | `libx264` | Encoder for the re-encoded picture (remove mode). |
+| `--crf` | `18` | x264/x265 quality (lower = better/larger). |
+| `--preset` | `medium` | Encoder speed/efficiency preset. |
+
+Without `--video`, the picture flags warn and are ignored. Naming an `-o` video
+container without `--video` is an error (add `--video` or choose a `.wav` path).
 
 ## `validate` subcommand
 
@@ -260,6 +302,8 @@ Runs three deterministic checks:
   `remove` / `0.0` when absent, so older cut lists validate unchanged):
   - `remove`: `output ≈ input − sum(cut lengths) + injected_gap_s`.
   - `silence`: `output ≈ input` (nothing is excised; cuts are muted in place).
+- **A/V sync** (video outputs only) — the video and audio streams end within
+  ~1 frame of each other.
 - **No-filler invariant** — re-transcribe the output; assert no token in the
   filler set survives.
 

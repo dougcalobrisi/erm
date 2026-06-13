@@ -6,9 +6,26 @@ import json
 from pathlib import Path
 from typing import Iterable
 
+import subprocess
+
 from .asr import transcribe
 from .ffmpeg_ops import ffprobe_duration
 from .fillers import DEFAULT_FILLERS, is_filler, normalize_word
+from .video import probe_video
+
+
+def _stream_duration(path: str | Path, stream: str) -> float | None:
+    """Duration (s) of a single stream (e.g. ``"v:0"``/``"a:0"``), or None."""
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", stream,
+         "-show_entries", "stream=duration",
+         "-of", "default=nokey=1:noprint_wrappers=1", str(path)],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    try:
+        return float(out)
+    except ValueError:
+        return None
 
 
 def validate_output(
@@ -71,6 +88,29 @@ def validate_output(
         "delta_ms": (out_dur - expected) * 1000.0,
         "tolerance_ms": duration_tolerance_ms,
     }
+
+    # A/V parity (video outputs only): the picture and the audio must end within
+    # ~1 frame of each other. Audio is sample-exact; the video is frame-quantized
+    # and conformed to the audio, so the bar is one frame plus a small epsilon.
+    out_video = probe_video(output_path)
+    if out_video.has_video:
+        video_dur = _stream_duration(output_path, "v:0")
+        audio_dur = _stream_duration(output_path, "a:0")
+        fps = out_video.fps or 30.0
+        av_tolerance_s = 1.0 / fps + 0.005
+        if video_dur is None or audio_dur is None:
+            av_ok = False
+            delta_ms = None
+        else:
+            delta_ms = (video_dur - audio_dur) * 1000.0
+            av_ok = abs(video_dur - audio_dur) <= av_tolerance_s
+        report["checks"]["av_sync"] = {
+            "ok": av_ok,
+            "video_duration_s": video_dur,
+            "audio_duration_s": audio_dur,
+            "delta_ms": delta_ms,
+            "tolerance_ms": av_tolerance_s * 1000.0,
+        }
 
     words, _ = transcribe(
         output_path, model_name=model_name,
