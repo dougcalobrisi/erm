@@ -5,6 +5,17 @@ All notable changes to `erm` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`--add-fillers`** and **`--remove-fillers`** — adjust the pass-1 word list
+  relative to the defaults instead of replacing it. `--fillers` still overrides
+  the whole set; `--add-fillers "basically,like"` unions words on top of it, and
+  `--remove-fillers "ah"` subtracts (removal wins over additions). Lets you keep
+  the built-in stems and add or drop a couple of words without re-typing the
+  full list.
+
 ## [0.3.0] - 2026-06-12
 
 Render modes and pause spacing. Every new behavior is off by default — a default

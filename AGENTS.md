@@ -44,7 +44,8 @@ Tune by symptom; change one cluster at a time; re-check with `--dry-run` + `vali
 See [`docs/troubleshooting.md`](docs/troubleshooting.md) (symptom → knob).
 
 1. **Detection** (what gets cut) — `--model` (biggest lever), `--detect-gaps`,
-   `--confirm-pitch`, `--gap-*`, `--intraword-min-ms`, `--fillers`. → [`docs/detection.md`](docs/detection.md)
+   `--confirm-pitch`, `--gap-*`, `--intraword-min-ms`, `--fillers`
+   (`--add-fillers` / `--remove-fillers` to tweak the defaults). → [`docs/detection.md`](docs/detection.md)
 2. **Refinement** — `--search-ms`, `--merge-gap-ms`. → [`docs/render-pipeline.md`](docs/render-pipeline.md)
 3. **Splice spacing** (remove mode) — `--pad-pause-factor`, `--pad-min-ms`,
    `--pad-max-ms`, `--min-gap-ms`. → [`docs/render-pipeline.md`](docs/render-pipeline.md)

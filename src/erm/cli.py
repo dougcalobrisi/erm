@@ -54,7 +54,21 @@ def _build_remove_parser() -> argparse.ArgumentParser:
                    help="faster-whisper compute type (e.g. int8, float16). "
                         "'auto' (default) lets the backend choose.")
     p.add_argument("--fillers", default=",".join(sorted(DEFAULT_FILLERS)),
-                   help="Comma-separated filler word list.")
+                   help="Comma-separated filler word list. Replaces the "
+                        "built-in default set entirely; use --add-fillers to "
+                        "extend the defaults instead.")
+    p.add_argument("--add-fillers", dest="add_fillers", default="",
+                   help="Comma-separated words to add on top of --fillers "
+                        "(e.g. 'basically,like'). Convenient for keeping the "
+                        "defaults and adding a few of your own verbal tics. "
+                        "Note: custom words match verbatim only — automatic "
+                        "elongation (ummmm -> um) applies to built-in stems.")
+    p.add_argument("--remove-fillers", dest="remove_fillers", default="",
+                   help="Comma-separated words to drop from the set after "
+                        "--fillers/--add-fillers are applied (e.g. 'ah' if it "
+                        "over-matches). Removal wins over additions. Emptying "
+                        "the set disables pass-1 word matching entirely (the "
+                        "gap and intra-word detectors still run).")
     p.add_argument("--search-ms", type=float, default=60.0)
     p.add_argument("--crossfade-ms", type=float, default=None,
                    help="Fixed crossfade length for every splice. When omitted "
@@ -177,6 +191,20 @@ def _parse_filler_set(spec: str) -> set[str]:
     return {word.strip().lower() for word in spec.split(",") if word.strip()}
 
 
+def _resolve_filler_set(base: str, add: str, remove: str) -> set[str]:
+    """Compose the effective filler set from the three CLI specs.
+
+    ``base`` (``--fillers``) defines the set, ``add`` (``--add-fillers``)
+    unions words on top, and ``remove`` (``--remove-fillers``) subtracts.
+    Removal is applied last, so it wins over additions and a word present in
+    both ``add`` and ``remove`` ends up excluded.
+    """
+    fillers = _parse_filler_set(base)
+    fillers |= _parse_filler_set(add)
+    fillers -= _parse_filler_set(remove)
+    return fillers
+
+
 def _parse_room_tone_source(value: str) -> tuple[float, float]:
     """Parse a ``'START-END'`` seconds spec into a ``(start, end)`` pair.
 
@@ -209,7 +237,8 @@ def _timestamped(input_path: str | Path, suffix: str, ext: str) -> Path:
 
 
 def _cmd_remove(args: argparse.Namespace) -> int:
-    fillers = _parse_filler_set(args.fillers)
+    fillers = _resolve_filler_set(args.fillers, args.add_fillers,
+                                  args.remove_fillers)
 
     # Validate spacing knobs up front so a bad combination fails immediately
     # rather than after the (slow) transcribe/refine pass.

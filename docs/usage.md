@@ -90,7 +90,7 @@ in turn tells you *which knob* governs that cut:
 
 | Label in JSON | Detector | If this cut is wrong, reach for… |
 |---------------|----------|----------------------------------|
-| the literal word (`"um"`, `"uhhh"`) | word-list match | `--fillers` |
+| the literal word (`"um"`, `"uhhh"`) | word-list match | `--fillers` (replace), `--add-fillers` / `--remove-fillers` (tweak defaults) |
 | `<gap>` | gap filler (voiced energy in a silence) | `--gap-min-ms`, `--gap-min-voiced-ms` / `--gap-max-voiced-ms` |
 | `<in:WORD>` | intra-word (filler fused inside `WORD`) | `--intraword-min-ms`, `--confirm-pitch` |
 | `<long:WORD>` | overlong (`WORD` ran much longer than its text) | `--confirm-pitch` |

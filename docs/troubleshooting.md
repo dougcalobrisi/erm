@@ -32,7 +32,8 @@ Detection is too aggressive. Read the label on the offending cut:
   aren't scanned internally.
 - `<gap>` → raise `--gap-min-ms` so brief natural pauses aren't treated as
   fillers.
-- a literal word → your `--fillers` list is too broad; remove that word.
+- a literal word → your filler list is too broad; drop that word with
+  `--remove-fillers WORD` (no need to re-type the whole `--fillers` list).
 
 See [detection.md → the guards](detection.md#pass-3--intra-word-fillers-detectpydetect_intraword_fillers).
 

@@ -40,6 +40,27 @@ def test_parse_filler_set(spec, expected):
     assert cli._parse_filler_set(spec) == expected
 
 
+# ---------- _resolve_filler_set --------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "base,add,remove,expected",
+    [
+        ("um,uh", "", "", {"um", "uh"}),                  # base only
+        ("um,uh", "basically", "", {"um", "uh", "basically"}),  # add extends
+        ("um,uh", "Basically, Like", "", {"um", "uh", "basically", "like"}),
+        ("um,uh", "", "uh", {"um"}),                      # remove subtracts
+        ("um,uh", "like", "uh", {"um", "like"}),          # add + remove
+        ("um,uh", "like", "like", {"um", "uh"}),          # remove wins over add
+        ("um,uh", "um", "", {"um", "uh"}),                # adding a dup is a no-op
+        ("um,uh", "", "nope", {"um", "uh"}),              # removing absent is a no-op
+        ("um", "", "um", set()),                          # emptying the set is allowed
+    ],
+)
+def test_resolve_filler_set(base, add, remove, expected):
+    assert cli._resolve_filler_set(base, add, remove) == expected
+
+
 # ---------- _parse_room_tone_source ----------------------------------------
 
 
@@ -99,6 +120,28 @@ def test_remove_parser_defaults():
     assert args.dry_run is False
     assert args.crossfade_ms is None
     assert args.room_tone_source == "auto"
+
+
+def test_remove_parser_filler_flag_defaults():
+    args = cli._build_remove_parser().parse_args(["in.wav"])
+    # --fillers defaults to the built-in set; add/remove default to empty.
+    assert cli._parse_filler_set(args.fillers) == set(cli.DEFAULT_FILLERS)
+    assert args.add_fillers == ""
+    assert args.remove_fillers == ""
+
+
+def test_remove_parser_add_and_remove_fillers():
+    args = cli._build_remove_parser().parse_args(
+        ["in.wav", "--add-fillers", "basically,like", "--remove-fillers", "ah"]
+    )
+    assert args.add_fillers == "basically,like"
+    assert args.remove_fillers == "ah"
+    resolved = cli._resolve_filler_set(
+        args.fillers, args.add_fillers, args.remove_fillers
+    )
+    assert "basically" in resolved and "like" in resolved
+    assert "ah" not in resolved
+    assert "um" in resolved  # defaults preserved
 
 
 def test_remove_parser_boolean_optional_negation():

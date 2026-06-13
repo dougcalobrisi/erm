@@ -187,7 +187,9 @@ floor dB).
 | `--model` | `large-v3` | Any faster-whisper model. `medium.en` / `small.en` faster but less accurate. |
 | `--device` | `auto` | `auto` / `cpu` / `cuda`. `auto` uses the GPU when available and falls back to CPU if the CUDA runtime can't be loaded (see [Transcription device](#transcription-device-gpu-vs-cpu)). |
 | `--compute-type` | `auto` | faster-whisper compute type (e.g. `int8`, `float16`). `auto` lets the backend choose. |
-| `--fillers` | `ah,er,erm,hmm,mhm,mm,uh,uh-huh,um` | Comma-separated stems. Elongations matched dynamically. |
+| `--fillers` | `ah,er,erm,hmm,mhm,mm,uh,uh-huh,um` | Comma-separated stems; **replaces** the default set. Elongations matched dynamically. |
+| `--add-fillers` | _(empty)_ | Comma-separated words to add on top of `--fillers` (e.g. `basically,like`). Keeps the defaults; matches verbatim only. |
+| `--remove-fillers` | _(empty)_ | Comma-separated words to drop after add/replace. Removal wins over additions. |
 | `--detect-gaps` / `--no-detect-gaps` | on | Run gap + intra-word + overlong detectors. |
 | `--gap-min-ms` | `350` | Minimum inter-word gap to scan for fillers. |
 | `--gap-min-voiced-ms` / `--gap-max-voiced-ms` | `100` / `1500` | Voiced-run length bounds. |
