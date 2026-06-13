@@ -83,7 +83,7 @@ mono/stereo have an unambiguous one. Downmix the input to stereo first, or drop
 `erm` picked the GPU but the CUDA runtime libraries aren't installed. With
 `--device auto` (default) it warns and falls back to CPU automatically. To
 silence it, pass `--device cpu`; to actually use the GPU, install the CUDA wheels
-(README's [Transcription device](../README.md#transcription-device-gpu-vs-cpu)).
+(README's [Transcription device](https://github.com/dougcalobrisi/erm#transcription-device-gpu-vs-cpu)).
 Details: [transcription.md → CUDA fallback](transcription.md#cuda--cpu-fallback-asr_is_recoverable_cuda_error).
 
 ## Too slow

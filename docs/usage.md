@@ -2,7 +2,7 @@
 
 A practical guide to running `erm` well: which settings to pick up front, and how
 to tune efficiently. For the full flag list and defaults see the top-level
-[README](../README.md); for *why* each knob works the way it does, follow the
+[README](https://github.com/dougcalobrisi/erm#readme); for *why* each knob works the way it does, follow the
 links into the internals docs. If you have a bad result and want the fix, jump
 straight to [troubleshooting.md](troubleshooting.md); for ready-made command
 lines, see [recipes.md](recipes.md).
@@ -109,7 +109,7 @@ erm validate input.wav input-cleaned-*.wav --cuts input-cuts-*.json
 
 This runs three deterministic checks — container sanity, duration math (per
 mode), and a re-transcribe that asserts no filler survived. See the README's
-[`validate`](../README.md#validate-subcommand) section. It's the cheap
+[`validate`](https://github.com/dougcalobrisi/erm#validate-subcommand) section. It's the cheap
 confidence check before you ship the file.
 
 ## Where to go next

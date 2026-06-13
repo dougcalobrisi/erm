@@ -1,8 +1,8 @@
 # `erm` docs
 
 Two layers of documentation live here. For the flag list and defaults, the
-top-level [README](../README.md) remains the single source of truth for the CLI
-surface.
+top-level [README](https://github.com/dougcalobrisi/erm#readme) remains the
+single source of truth for the CLI surface.
 
 ## Usage guides (start here)
 
