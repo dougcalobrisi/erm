@@ -226,6 +226,7 @@ def _keep_fades(
     max_crossfade_ms: float,
     crossfade_factor: float,
     min_gap_s: float = 0.0,
+    snap_fps: float | None = None,
 ) -> list[float]:
     """Per-splice crossfade lengths for each keep→keep join.
 
@@ -245,6 +246,12 @@ def _keep_fades(
     *injected* (a `concat`, no overlap), splices just above it get their
     crossfade *trimmed* here. With `min_gap_s == 0` (every default run) the
     clamp is skipped and the fades are byte-for-byte the prior values.
+
+    When `snap_fps` is set (a video render), each fade is rounded to a whole
+    video frame (``round(fade·fps)/fps``). The identical snapped list feeds both
+    the audio `acrossfade` and the video `xfade`, so both streams shorten by the
+    same amount at every splice and stay in sync by construction. `snap_fps=None`
+    (every audio-only run) leaves the fades untouched — byte-identical output.
     """
     fades: list[float] = []
     for i in range(1, len(keep_ranges)):
@@ -276,6 +283,16 @@ def _keep_fades(
         if min_gap_s > 0 and lhs_room is not None and rhs_room is not None:
             surviving_gap = lhs_room + rhs_room
             fade = min(fade, max(0.0, surviving_gap - min_gap_s))
+        if snap_fps:
+            # Snap to whole frames. ffmpeg's `xfade` corrupts a chained graph
+            # when a transition is a single frame, so floor any positive fade at
+            # two frames (still a valid audio crossfade — ≥2 frames is ~67-80ms
+            # at 24-30 fps, within the normal crossfade range). A fade that
+            # rounds to zero stays zero (that splice hard-cuts on both streams).
+            frames = round(fade * snap_fps)
+            if frames == 1:
+                frames = 2
+            fade = frames / snap_fps
         fades.append(fade)
     return fades
 
@@ -386,6 +403,7 @@ def render(
     words: Sequence[Word] | None = None,
     gap_inserts: Sequence[tuple[int, float]] | None = None,
     min_gap_s: float = 0.0,
+    fades: Sequence[float] | None = None,
 ) -> None:
     """Render `keep_ranges` from `input_path` to `output_path` via ffmpeg.
 
@@ -405,6 +423,11 @@ def render(
     the surviving crossfades are trimmed not to pull words below the floor (see
     `_keep_fades`). With both unset/zero (every default run) the verbatim
     default render path below runs and the output is byte-identical.
+
+    `fades` overrides the per-splice crossfade lengths (length
+    ``len(keep_ranges) - 1``) instead of computing them internally. A video
+    render passes the same frame-snapped list to both this audio render and the
+    video render so the two streams shorten identically at every splice.
     """
     if not keep_ranges:
         raise ValueError("keep_ranges is empty — output would have no audio")
@@ -437,7 +460,7 @@ def render(
     # never attenuates one; when a side has no word (e.g. a splice past the
     # last word) it falls back to that fragment's own boundary, imposing
     # nothing beyond the fragment-length cap.
-    fades_s = _keep_fades(
+    fades_s = list(fades) if fades is not None else _keep_fades(
         keep_ranges, words,
         crossfade_ms=crossfade_ms,
         min_crossfade_ms=min_crossfade_ms,

@@ -17,9 +17,11 @@ from .detect import (
 )
 from .acoustic import is_sustained_vowel
 from .ffmpeg_ops import (
+    _keep_fades,
     denoise_to,
     extract_audio_wav,
     extract_segment,
+    ffprobe_duration,
     gap_channel_layout,
     has_video_stream,
     overlay_room_tone,
@@ -36,7 +38,7 @@ from .ranges import (
 )
 from .refine import refine_boundaries
 from .validate import validate_output
-from .video import VideoInfo, mux_av, probe_video
+from .video import VideoInfo, mux_av, probe_video, render_video_keep_ranges
 
 
 def _build_remove_parser() -> argparse.ArgumentParser:
@@ -529,12 +531,18 @@ def _cmd_remove(args: argparse.Namespace) -> int:
         _cleanup_temps()
         return 1
 
-    # TODO(phase 3-4): remove-mode video render. Silence-mode video is wired
-    # below (stream-copy + mux). Until remove-mode lands, fail loudly rather than
-    # silently emit audio into a video-named output.
-    if render_video and args.mode != "silence":
-        print("error: --video with --mode remove is not wired yet (landing in a "
-              "follow-up phase); use --mode silence, or drop --video", file=sys.stderr)
+    # TODO(phase 4): min-gap + video (frozen/plays-through fillers). Silence and
+    # remove (cut/crossfade) video are wired below; min-gap video is not, so fail
+    # loudly rather than emit an out-of-sync result.
+    if render_video and gap_inserts:
+        print("error: --video with --min-gap-ms is not wired yet (landing in a "
+              "follow-up phase); drop --min-gap-ms, or drop --video", file=sys.stderr)
+        _cleanup_temps()
+        return 1
+    if render_video and video_info.fps is None:
+        print("error: could not determine the input's frame rate; cannot render "
+              "video. Re-run with --no... drop --video for audio-only output.",
+              file=sys.stderr)
         _cleanup_temps()
         return 1
 
@@ -568,15 +576,57 @@ def _cmd_remove(args: argparse.Namespace) -> int:
     if render_video:
         audio_dest = str(_timestamped(args.input, "audiomaster", "wav"))
 
+    # Frame-snapped per-splice fades, shared verbatim by the audio acrossfade and
+    # the video xfade so both streams shorten identically at each splice. For a
+    # 'cut' splice both streams hard-concat (zero fades). Only computed for a
+    # remove-mode video render; audio-only runs let render() compute internally.
+    fr = video_info.fps
+    video_fades: list[float] | None = None
+    if render_video and args.mode == "remove":
+        if args.video_splice == "cut":
+            video_fades = [0.0] * max(0, len(keep) - 1)
+        else:
+            video_fades = _keep_fades(
+                keep, words,
+                crossfade_ms=args.crossfade_ms,
+                min_crossfade_ms=args.min_crossfade_ms,
+                max_crossfade_ms=args.max_crossfade_ms,
+                crossfade_factor=args.crossfade_factor,
+                snap_fps=fr,
+            )
+
     def _finalize(audio_master: str) -> int:
         """Mux the picture onto the finished audio master (video runs), or no-op
         for audio-only, then clean up temps and return 0."""
-        if render_video:
-            # Silence mode keeps the original picture frame-for-frame, so the
-            # video is stream-copied; durations already match (no cut excised).
-            print(f"      muxing video -> {args.output}", file=sys.stderr)
-            mux_av(args.input, audio_master, args.output, vcodec="copy")
-            Path(audio_master).unlink(missing_ok=True)
+        if not render_video:
+            _cleanup_temps()
+            return 0
+        video_temp: Path | None = None
+        if args.mode == "silence":
+            # Silence keeps the original picture frame-for-frame → stream-copy.
+            video_source: str = args.input
+            mux_vcodec = "copy"
+        else:
+            # Remove mode: render the spliced picture (already encoded), then
+            # copy it through the mux (don't re-encode twice).
+            video_temp = _timestamped(args.input, "videoraw",
+                                      Path(args.output).suffix.lstrip("."))
+            print(f"      rendering video ({args.video_splice})...", file=sys.stderr)
+            # Conform the picture to the audio master's sample-exact length so
+            # both streams end frame-for-frame together.
+            render_video_keep_ranges(
+                args.input, keep, video_fades or [], fr, video_temp,
+                splice_style=args.video_splice, vcodec=args.vcodec,
+                crf=args.crf, preset=args.preset,
+                target_duration=ffprobe_duration(audio_master),
+            )
+            video_source = str(video_temp)
+            mux_vcodec = "copy"
+        print(f"      muxing video -> {args.output}", file=sys.stderr)
+        mux_av(video_source, audio_master, args.output, vcodec=mux_vcodec)
+        if video_temp is not None:
+            video_temp.unlink(missing_ok=True)
+        Path(audio_master).unlink(missing_ok=True)
         _cleanup_temps()
         return 0
 
@@ -595,7 +645,8 @@ def _cmd_remove(args: argparse.Namespace) -> int:
                crossfade_factor=args.crossfade_factor,
                words=words,
                gap_inserts=gap_inserts,
-               min_gap_s=args.min_gap_ms / 1000.0)
+               min_gap_s=args.min_gap_ms / 1000.0,
+               fades=video_fades)
 
     current = render_target
     if needs_post_denoise:

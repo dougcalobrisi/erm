@@ -106,6 +106,110 @@ def probe_video(path: str | Path) -> VideoInfo:
     )
 
 
+def render_video_keep_ranges(
+    input_path: str | Path,
+    keep_ranges: list[tuple[float, float]],
+    fades: list[float],
+    fr: float,
+    output_path: str | Path,
+    *,
+    splice_style: str = "crossfade",
+    vcodec: str = "libx264",
+    crf: float = 18.0,
+    preset: str = "medium",
+    target_duration: float | None = None,
+) -> None:
+    """Render the picture for `keep_ranges`, mirroring the audio splice graph.
+
+    The stream is first forced to constant frame rate (`fps={fr}`) so every
+    downstream `trim`/`xfade` lands on a uniform frame grid — without this,
+    variable-frame-rate input (phones, screen recorders) breaks the duration
+    math. Then, mirroring `ffmpeg_ops.render`:
+
+    - 1 keep → a single `trim` re-encode.
+    - `crossfade` with all fades > 0 → per-fragment `trim`/`setpts`, chained
+      `xfade=transition=fade:duration=dᵢ:offset=Oᵢ`. `dᵢ` is the frame-snapped
+      fade shared with the audio `acrossfade`; `Oᵢ` is computed from the true
+      float cumulative length (``Σprev_keeps − Σprev_fades``) so offset error
+      never accumulates.
+    - `cut`, or any zero fade → `concat` of all fragments (no overlap). This is
+      the same all-or-nothing choice the audio path makes, so audio and video
+      always pick the same structure and end at the same duration.
+
+    `target_duration` conforms the final picture to an exact length (the audio
+    master's sample-exact duration): the video is clone-padded if short and
+    trimmed if long, so the two streams end frame-for-frame together. This
+    absorbs the frame-quantized cut points of the `cut`/`concat` path and any
+    residual from the `xfade` path.
+
+    Audio is dropped (`-an`); it is muxed back from the clean PCM master by
+    `mux_av`.
+    """
+    keep_ranges = list(keep_ranges)
+    n = len(keep_ranges)
+    if n == 0:
+        raise ValueError("keep_ranges is empty — video would have no frames")
+
+    def _conform(label_in: str) -> str:
+        """Filter snippet forcing the stream to exactly `target_duration`."""
+        if target_duration is None:
+            return ""
+        # Clone-pad by the full target (always ≥ any deficit, since the raw
+        # stream is ≥ 0), then hard-trim to the target — exact length whether the
+        # splice came out short or long.
+        return (f"[{label_in}]tpad=stop_mode=clone:stop_duration={target_duration:.6f},"
+                f"trim=end={target_duration:.6f},setpts=PTS-STARTPTS[outv]")
+
+    tail = ["-c:v", vcodec, "-crf", f"{crf:g}", "-preset", preset,
+            "-pix_fmt", "yuv420p", "-an", str(output_path)]
+
+    if n == 1:
+        s, e = keep_ranges[0]
+        vf = f"fps={fr:.6f},trim=start={s:.6f}:end={e:.6f},setpts=PTS-STARTPTS"
+        if target_duration is not None:
+            vf += (f",tpad=stop_mode=clone:stop_duration={target_duration:.6f},"
+                   f"trim=end={target_duration:.6f},setpts=PTS-STARTPTS")
+        cmd = ["ffmpeg", "-y", "-i", str(input_path), "-vf", vf, *tail]
+        subprocess.run(cmd, check=True, capture_output=True)
+        return
+
+    parts: list[str] = [
+        f"[0:v]fps={fr:.6f},format=yuv420p,split={n}"
+        + "".join(f"[c{i}]" for i in range(n))
+    ]
+    for i, (s, e) in enumerate(keep_ranges):
+        parts.append(
+            f"[c{i}]trim=start={s:.6f}:end={e:.6f},setpts=PTS-STARTPTS[k{i}]"
+        )
+
+    # Final spliced label is "outv" unless a conform pass renames it.
+    spliced = "vraw" if target_duration is not None else "outv"
+    if splice_style == "cut" or not all(d > 0 for d in fades):
+        inputs = "".join(f"[k{i}]" for i in range(n))
+        parts.append(f"{inputs}concat=n={n}:v=1:a=0[{spliced}]")
+    else:
+        prev = "k0"
+        # True float cumulative length of the accumulated stream so far.
+        cumulative = keep_ranges[0][1] - keep_ranges[0][0]
+        for i in range(1, n):
+            d = fades[i - 1]
+            out = spliced if i == n - 1 else f"x{i}"
+            offset = cumulative - d
+            parts.append(
+                f"[{prev}][k{i}]xfade=transition=fade:"
+                f"duration={d:.6f}:offset={offset:.6f}[{out}]"
+            )
+            cumulative += (keep_ranges[i][1] - keep_ranges[i][0]) - d
+            prev = out
+
+    if target_duration is not None:
+        parts.append(_conform(spliced))
+
+    cmd = ["ffmpeg", "-y", "-i", str(input_path),
+           "-filter_complex", ";".join(parts), "-map", "[outv]", *tail]
+    subprocess.run(cmd, check=True, capture_output=True)
+
+
 def audio_mux_args(output_ext: str) -> list[str]:
     """ffmpeg `-c:a …` args for muxing the clean PCM master into `output_ext`.
 
