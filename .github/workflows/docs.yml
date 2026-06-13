@@ -34,7 +34,11 @@ jobs:
         run: uv python install 3.13
 
       - name: Build site
-        run: uv run --extra docs mkdocs build --strict --site-dir _site
+        # --no-project --with installs MkDocs into a throwaway env without the
+        # project, so the static build never pulls erm's ASR/DSP runtime stack
+        # (faster-whisper, ctranslate2, onnxruntime, numba, scipy, …). Keep the
+        # version in sync with the `docs` extra in pyproject.toml.
+        run: uv run --no-project --with 'mkdocs-material>=9.5' mkdocs build --strict --site-dir _site
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
