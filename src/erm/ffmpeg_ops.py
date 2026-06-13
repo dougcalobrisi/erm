@@ -10,6 +10,24 @@ from typing import Sequence
 from .models import Word
 
 
+def run_ffmpeg(cmd: Sequence[str]) -> subprocess.CompletedProcess[str]:
+    """Run an ffmpeg/ffprobe command, surfacing its stderr if it fails.
+
+    ``subprocess.run(..., check=True, capture_output=True)`` swallows ffmpeg's
+    stderr, so a failing render or complex filtergraph surfaces only as a bare
+    ``CalledProcessError`` with no diagnostic. This runs the command and, on a
+    non-zero exit, raises ``RuntimeError`` carrying the tail of ffmpeg's stderr
+    (where the actual error lives) so the failure is debuggable in the field.
+    """
+    proc = subprocess.run(list(cmd), capture_output=True, text=True)
+    if proc.returncode != 0:
+        tail = "\n".join((proc.stderr or "").strip().splitlines()[-20:])
+        raise RuntimeError(
+            f"{cmd[0]} failed (exit {proc.returncode}):\n{tail}"
+        )
+    return proc
+
+
 def ffprobe_duration(path: str | Path) -> float:
     out = subprocess.run(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration",
@@ -61,7 +79,7 @@ def gap_channel_layout(path: str | Path) -> str:
 
 
 def has_video_stream(path: str | Path) -> bool:
-    """Return True if `path` has a real (non-cover-art) video stream.
+    """Return True if `path`'s first video stream is real (non-cover-art) motion.
 
     ``ffprobe`` reports a still image embedded as cover art (e.g. an mp3's
     album thumbnail) as a video stream with ``disposition.attached_pic=1``;
@@ -69,15 +87,19 @@ def has_video_stream(path: str | Path) -> bool:
     input must be routed through :func:`extract_audio_wav` before any
     librosa-based analysis (which falls back to a slow, deprecated decoder on
     video containers).
+
+    Probes ``v:0`` only, so it makes the **same** decision as
+    :func:`erm.video.probe_video` (which also keys off the first video stream) —
+    the two never disagree about whether an input "has video".
     """
     out = subprocess.run(
-        ["ffprobe", "-v", "error", "-select_streams", "v",
+        ["ffprobe", "-v", "error", "-select_streams", "v:0",
          "-show_entries", "stream_disposition=attached_pic",
          "-of", "default=noprint_wrappers=1", str(path)],
         capture_output=True, text=True, check=True,
     ).stdout
-    # One `DISPOSITION:attached_pic=<0|1>` line per video stream. A real motion
-    # stream has it 0; cover art has it 1. True iff any stream is real video.
+    # A single `DISPOSITION:attached_pic=<0|1>` line for the first video stream
+    # (none printed when there is no video stream at all). 0 = real motion video.
     for line in out.splitlines():
         key, _, value = line.partition("=")
         if key.strip() == "DISPOSITION:attached_pic" and value.strip() == "0":
@@ -98,7 +120,7 @@ def extract_audio_wav(input_path: str | Path, output_path: str | Path,
     cmd = ["ffmpeg", "-y", "-i", str(input_path), "-vn",
            "-ac", str(channels), "-ar", str(sample_rate),
            "-c:a", "pcm_s16le", str(output_path)]
-    subprocess.run(cmd, check=True, capture_output=True)
+    run_ffmpeg(cmd)
 
 
 def extract_segment(input_path: str | Path, start_s: float, end_s: float,
@@ -106,7 +128,7 @@ def extract_segment(input_path: str | Path, start_s: float, end_s: float,
     cmd = ["ffmpeg", "-y", "-i", str(input_path),
            "-ss", f"{start_s:.6f}", "-to", f"{end_s:.6f}",
            "-c:a", "pcm_s16le", str(output_path)]
-    subprocess.run(cmd, check=True, capture_output=True)
+    run_ffmpeg(cmd)
 
 
 def denoise_to(input_path: str | Path, output_path: str | Path,
@@ -120,7 +142,7 @@ def denoise_to(input_path: str | Path, output_path: str | Path,
     cmd = ["ffmpeg", "-y", "-i", str(input_path),
            "-af", f"afftdn=nr={nr}:nf={nf}",
            "-c:a", "pcm_s16le", str(output_path)]
-    subprocess.run(cmd, check=True, capture_output=True)
+    run_ffmpeg(cmd)
 
 
 def overlay_room_tone(audio_path: str | Path, tone_path: str | Path,
@@ -144,7 +166,7 @@ def overlay_room_tone(audio_path: str | Path, tone_path: str | Path,
         "-c:a", "pcm_s16le",
         str(output_path),
     ]
-    subprocess.run(cmd, check=True, capture_output=True)
+    run_ffmpeg(cmd)
 
 
 def _mute_filter(mute_ranges: Sequence[tuple[float, float]]) -> str:
@@ -179,7 +201,7 @@ def render_silenced(
     if mute_filter:
         cmd += ["-af", mute_filter]
     cmd += ["-c:a", "pcm_s16le", str(output_path)]
-    subprocess.run(cmd, check=True, capture_output=True)
+    run_ffmpeg(cmd)
 
 
 def _splice_crossfade_s(
@@ -390,7 +412,7 @@ def _render_with_gaps(
     cmd = ["ffmpeg", "-y", "-i", str(input_path),
            "-filter_complex", filter_complex,
            "-map", f"[{map_label}]", "-c:a", "pcm_s16le", str(output_path)]
-    subprocess.run(cmd, check=True, capture_output=True)
+    run_ffmpeg(cmd)
 
 
 def render(
@@ -454,7 +476,7 @@ def render(
         cmd = ["ffmpeg", "-y", "-i", str(input_path),
                "-ss", f"{s:.6f}", "-to", f"{e:.6f}",
                "-c:a", "pcm_s16le", str(output_path)]
-        subprocess.run(cmd, check=True, capture_output=True)
+        run_ffmpeg(cmd)
         return
 
     # Per-splice crossfade lengths. The word-aware clamp inside `_keep_fades`
@@ -495,4 +517,4 @@ def render(
     cmd = ["ffmpeg", "-y", "-i", str(input_path),
            "-filter_complex", filter_complex,
            "-map", "[out]", "-c:a", "pcm_s16le", str(output_path)]
-    subprocess.run(cmd, check=True, capture_output=True)
+    run_ffmpeg(cmd)

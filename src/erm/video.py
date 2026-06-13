@@ -15,6 +15,8 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
+from .ffmpeg_ops import run_ffmpeg
+
 
 @dataclass(frozen=True)
 class VideoInfo:
@@ -171,7 +173,7 @@ def render_video_keep_ranges(
             vf += (f",tpad=stop_mode=clone:stop_duration={target_duration:.6f},"
                    f"trim=end={target_duration:.6f},setpts=PTS-STARTPTS")
         cmd = ["ffmpeg", "-y", "-i", str(input_path), "-vf", vf, *tail]
-        subprocess.run(cmd, check=True, capture_output=True)
+        run_ffmpeg(cmd)
         return
 
     parts: list[str] = [
@@ -208,7 +210,7 @@ def render_video_keep_ranges(
 
     cmd = ["ffmpeg", "-y", "-i", str(input_path),
            "-filter_complex", ";".join(parts), "-map", "[outv]", *tail]
-    subprocess.run(cmd, check=True, capture_output=True)
+    run_ffmpeg(cmd)
 
 
 def render_video_with_gaps(
@@ -321,7 +323,44 @@ def render_video_with_gaps(
            "-filter_complex", ";".join(parts), "-map", "[outv]",
            "-c:v", vcodec, "-crf", f"{crf:g}", "-preset", preset,
            "-pix_fmt", "yuv420p", "-an", str(output_path)]
-    subprocess.run(cmd, check=True, capture_output=True)
+    run_ffmpeg(cmd)
+
+
+def video_stream_duration(path: str | Path) -> float | None:
+    """Duration (s) of the first video stream (``v:0``), or None if unreadable.
+
+    Reads the *stream* duration, not the container's `format=duration`, because
+    silence mode conforms the audio master to the picture's own length.
+    """
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+         "-show_entries", "stream=duration",
+         "-of", "default=nokey=1:noprint_wrappers=1", str(path)],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    try:
+        return float(out)
+    except ValueError:
+        return None
+
+
+def conform_audio_to_duration(audio_path: str | Path, output_path: str | Path,
+                              target_s: float) -> None:
+    """Pad/trim `audio_path` to exactly `target_s` seconds, written as PCM.
+
+    ``apad`` appends silence and ``atrim`` caps the length, so the result is
+    exactly `target_s` whether the input was shorter or longer than the target.
+
+    This is silence mode's A/V-parity mechanism: the picture is stream-copied at
+    the *source's* video-track duration (untouched, lossless), so the audio
+    master is conformed to that exact length and the two streams end
+    frame-for-frame. (Remove mode does the inverse — it conforms the *picture*
+    to the audio master — so it never needs this.)
+    """
+    cmd = ["ffmpeg", "-y", "-i", str(audio_path),
+           "-af", f"apad,atrim=end={target_s:.6f}",
+           "-c:a", "pcm_s16le", str(output_path)]
+    run_ffmpeg(cmd)
 
 
 def audio_mux_args(output_ext: str) -> list[str]:
@@ -352,6 +391,13 @@ def mux_av(video_path: str | Path, audio_path: str | Path,
     accurate, zero quality loss); pass a real encoder (e.g. ``libx264``) with
     `crf`/`preset` when the video was re-encoded upstream. Audio codec is chosen
     by the output container (see `audio_mux_args`).
+
+    `-shortest` ends the output when the first stream ends, bounding A/V drift to
+    ≤1 frame. The remove path already conforms the picture to the audio master's
+    exact length, so this is a no-op safety net there; it is the real guarantee
+    for **silence mode**, where the picture is stream-copied at the *source's*
+    video-track duration, which can differ from the audio master by more than a
+    frame on real files whose v/a tracks aren't exactly equal-length.
     """
     ext = Path(output_path).suffix
     cmd = ["ffmpeg", "-y", "-i", str(video_path), "-i", str(audio_path),
@@ -364,5 +410,5 @@ def mux_av(video_path: str | Path, audio_path: str | Path,
     cmd += audio_mux_args(ext)
     if ext.lower() in (".mp4", ".m4v", ".mov"):
         cmd += ["-movflags", "+faststart"]
-    cmd += [str(output_path)]
-    subprocess.run(cmd, check=True, capture_output=True)
+    cmd += ["-shortest", str(output_path)]
+    run_ffmpeg(cmd)

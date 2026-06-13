@@ -345,3 +345,19 @@ container allows — `-c:a copy` (PCM) into mov/mkv/avi, **AAC 256k** for mp4
 (no universal lossless), **Opus 160k** for webm. The picture is `-c:v copy`'d
 through the mux (silence mode copies the source untouched; remove mode copies
 the already-encoded splice), never re-encoded twice.
+
+The final mux adds `-shortest`, ending the output when the first stream ends.
+In **remove** mode the picture is already conformed to the audio master's exact
+length, so this is a no-op safety net; in **silence** mode the picture is
+stream-copied at the *source's* video-track duration, which on a real file need
+not exactly equal the audio-track duration — `-shortest` clamps that native
+mismatch so the A/V-parity guarantee (≤1 frame) holds in silence mode too.
+
+## Pixel format: forced `yuv420p`
+
+The re-encoded picture (remove mode) is forced to `-pix_fmt yuv420p` for maximal
+player/container compatibility. A source in 4:2:2 or 4:4:4 is therefore
+chroma-subsampled to 4:2:0 on output — a loss beyond `--crf`, but invisible for
+the talking-head/screen-recording footage `erm` targets. Silence mode never
+re-encodes the picture (`-c:v copy`), so it preserves the source pixel format
+exactly.

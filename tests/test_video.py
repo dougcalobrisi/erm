@@ -20,8 +20,9 @@ from pathlib import Path
 import pytest
 
 from erm import cli
+from erm.ffmpeg_ops import run_ffmpeg
 from erm.models import Word
-from erm.video import audio_mux_args, probe_video
+from erm.video import VideoInfo, audio_mux_args, mux_av, probe_video
 
 
 pytestmark = pytest.mark.skipif(
@@ -36,13 +37,20 @@ ONE_FRAME_MS = 1000.0 / FPS
 
 
 def _make_av(path: Path, *, duration: float = DURATION_S, fps: int = FPS,
-             with_audio: bool = True, vcodec: str = "mpeg4") -> None:
-    """Synthesize a CFR `testsrc` clip (optionally + a sine tone) at `path`."""
+             with_audio: bool = True, vcodec: str = "mpeg4",
+             audio_duration: float | None = None) -> None:
+    """Synthesize a CFR `testsrc` clip (optionally + a sine tone) at `path`.
+
+    `audio_duration` defaults to the video duration; pass a different value to
+    mint a clip whose audio and video tracks aren't exactly equal-length (what a
+    real recording often looks like), exercising the mux's `-shortest` clamp.
+    """
+    a_dur = duration if audio_duration is None else audio_duration
     cmd = ["ffmpeg", "-y", "-f", "lavfi",
            "-i", f"testsrc=duration={duration}:size=320x240:rate={fps}"]
     if with_audio:
         cmd += ["-f", "lavfi",
-                "-i", f"sine=frequency=330:duration={duration}:sample_rate={SR}",
+                "-i", f"sine=frequency=330:duration={a_dur}:sample_rate={SR}",
                 "-map", "0:v", "-map", "1:a", "-c:a", "pcm_s16le"]
     else:
         cmd += ["-map", "0:v"]
@@ -252,3 +260,73 @@ def test_audio_mux_args_by_container():
     assert audio_mux_args(".webm")[:2] == ["-c:a", "libopus"]
     assert audio_mux_args(".mov") == ["-c:a", "copy"]
     assert audio_mux_args(".mkv") == ["-c:a", "copy"]
+
+
+# ----- error surfacing -----------------------------------------------------
+
+def test_run_ffmpeg_surfaces_stderr_on_failure(tmp_path):
+    # A bogus input makes ffmpeg exit non-zero; run_ffmpeg must raise with the
+    # diagnostic stderr tail rather than a bare CalledProcessError.
+    missing = tmp_path / "does-not-exist.mp4"
+    with pytest.raises(RuntimeError) as excinfo:
+        run_ffmpeg(["ffmpeg", "-y", "-i", str(missing), str(tmp_path / "o.wav")])
+    msg = str(excinfo.value)
+    assert "ffmpeg failed" in msg
+    # The ffmpeg stderr tail (mentioning the missing file) is carried through.
+    assert "does-not-exist" in msg
+
+
+# ----- silence-mode parity on unequal-length tracks ------------------------
+
+def test_silence_video_parity_with_mismatched_tracks(tmp_path, monkeypatch):
+    # A real recording's audio and video tracks rarely end at the exact same
+    # instant. Silence mode stream-copies the picture (source video-track
+    # length) and muxes our audio master onto it; the mux's `-shortest` must
+    # clamp the native mismatch so A/V parity (~1 frame) still holds.
+    clip = tmp_path / "clip.mov"
+    _make_av(clip, duration=DURATION_S, audio_duration=DURATION_S + 0.3)
+    out = tmp_path / "out.mov"
+    rc = _run(monkeypatch, [str(clip), "--video", "--mode", "silence",
+                            "-o", str(out), "--no-detect-gaps", "--no-room-tone"])
+    assert rc == 0
+    _assert_av_synced(out)
+
+
+# ----- mux_av re-encode branch ---------------------------------------------
+
+def test_mux_av_reencodes_video_when_vcodec_not_copy(tmp_path):
+    # The remove path muxes with -c:v copy, but mux_av also supports re-encoding
+    # the picture (general/reusable path). Exercise it directly with crf/preset.
+    clip = tmp_path / "src.mov"
+    _make_av(clip)
+    audio = tmp_path / "master.wav"
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i",
+                    f"sine=frequency=440:duration={DURATION_S}", str(audio)],
+                   check=True, capture_output=True)
+    out = tmp_path / "muxed.mov"
+    mux_av(clip, audio, out, vcodec="mpeg4", crf=20.0, preset="ultrafast")
+    assert _has_stream(out, "v") and _has_stream(out, "a")
+    _assert_av_synced(out)
+
+
+# ----- frame-rate guard ----------------------------------------------------
+
+def test_remove_video_errors_when_fps_undeterminable(tmp_path, monkeypatch):
+    # If the input reports a video stream but no usable frame rate, the render
+    # can't build its CFR grid — fail cleanly (rc 1) instead of crashing deep in
+    # ffmpeg, and don't leave the audio-master temp behind.
+    clip = tmp_path / "clip.mov"
+    _make_av(clip)
+    monkeypatch.setattr(
+        cli, "probe_video",
+        lambda _p: VideoInfo(has_video=True, fps=None, width=320, height=240),
+    )
+    out = tmp_path / "out.mov"
+    rc = _run(monkeypatch, [str(clip), "--video", "-o", str(out),
+                            "--no-detect-gaps", "--no-room-tone"])
+    assert rc == 1
+    assert not out.exists()
+    # No stray *-audiomaster-*.wav / *-analysis-*.wav temps left in the dir.
+    leftovers = list(tmp_path.glob("*-audiomaster-*.wav")) \
+        + list(tmp_path.glob("*-analysis-*.wav"))
+    assert leftovers == [], f"temp files leaked: {leftovers}"

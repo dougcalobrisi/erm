@@ -691,7 +691,8 @@ def _capture_render_filter(monkeypatch, keep_ranges, words):
 
     def _fake_run(cmd, **kwargs):
         captured["cmd"] = cmd
-        return None
+        # Mimic subprocess.run's contract (run_ffmpeg checks .returncode).
+        return ffmpeg_ops.subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     monkeypatch.setattr(ffmpeg_ops.subprocess, "run", _fake_run)
     render("in.wav", keep_ranges, "out.wav", words=words)

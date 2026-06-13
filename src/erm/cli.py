@@ -40,10 +40,12 @@ from .refine import refine_boundaries
 from .validate import validate_output
 from .video import (
     VideoInfo,
+    conform_audio_to_duration,
     mux_av,
     probe_video,
     render_video_keep_ranges,
     render_video_with_gaps,
+    video_stream_duration,
 )
 
 
@@ -547,7 +549,7 @@ def _cmd_remove(args: argparse.Namespace) -> int:
 
     if render_video and video_info.fps is None:
         print("error: could not determine the input's frame rate; cannot render "
-              "video. Re-run with --no... drop --video for audio-only output.",
+              "video. Drop --video for audio-only output.",
               file=sys.stderr)
         _cleanup_temps()
         return 1
@@ -608,42 +610,60 @@ def _cmd_remove(args: argparse.Namespace) -> int:
         if not render_video:
             _cleanup_temps()
             return 0
+        # The render/mux temps (the audio master, the raw video, and any
+        # analysis/denoise intermediates) must be cleaned even if an ffmpeg
+        # render or the mux raises, so the whole body runs under try/finally.
         video_temp: Path | None = None
-        if args.mode == "silence":
-            # Silence keeps the original picture frame-for-frame → stream-copy.
-            video_source: str = args.input
-            mux_vcodec = "copy"
-        else:
-            # Remove mode: render the spliced picture (already encoded), then
-            # copy it through the mux (don't re-encode twice).
-            video_temp = _timestamped(args.input, "videoraw",
-                                      Path(args.output).suffix.lstrip("."))
-            print(f"      rendering video ({args.video_splice})...", file=sys.stderr)
-            # Conform the picture to the audio master's sample-exact length so
-            # both streams end frame-for-frame together.
-            target = ffprobe_duration(audio_master)
-            if gap_inserts:
-                # min-gap: gaps play the real removed footage through, muted.
-                render_video_with_gaps(
-                    args.input, keep, gap_inserts, video_fades or [], fr,
-                    video_temp, splice_style=args.video_splice,
-                    vcodec=args.vcodec, crf=args.crf, preset=args.preset,
-                    target_duration=target,
-                )
+        conformed_audio: Path | None = None
+        try:
+            mux_audio = audio_master
+            if args.mode == "silence":
+                # Silence keeps the original picture frame-for-frame → stream-copy.
+                # The picture stays at the source's video-track length, so conform
+                # the audio master to that exact length for frame-exact A/V parity
+                # (the inverse of remove mode, which conforms the picture instead).
+                video_source: str = args.input
+                mux_vcodec = "copy"
+                video_dur = video_stream_duration(args.input)
+                if video_dur is not None:
+                    conformed_audio = _timestamped(args.input, "audioconf", "wav")
+                    conform_audio_to_duration(audio_master, conformed_audio,
+                                              video_dur)
+                    mux_audio = str(conformed_audio)
             else:
-                render_video_keep_ranges(
-                    args.input, keep, video_fades or [], fr, video_temp,
-                    splice_style=args.video_splice, vcodec=args.vcodec,
-                    crf=args.crf, preset=args.preset, target_duration=target,
-                )
-            video_source = str(video_temp)
-            mux_vcodec = "copy"
-        print(f"      muxing video -> {args.output}", file=sys.stderr)
-        mux_av(video_source, audio_master, args.output, vcodec=mux_vcodec)
-        if video_temp is not None:
-            video_temp.unlink(missing_ok=True)
-        Path(audio_master).unlink(missing_ok=True)
-        _cleanup_temps()
+                # Remove mode: render the spliced picture (already encoded), then
+                # copy it through the mux (don't re-encode twice).
+                video_temp = _timestamped(args.input, "videoraw",
+                                          Path(args.output).suffix.lstrip("."))
+                print(f"      rendering video ({args.video_splice})...", file=sys.stderr)
+                # Conform the picture to the audio master's sample-exact length so
+                # both streams end frame-for-frame together.
+                target = ffprobe_duration(audio_master)
+                if gap_inserts:
+                    # min-gap: gaps play the real removed footage through, muted.
+                    render_video_with_gaps(
+                        args.input, keep, gap_inserts, video_fades or [], fr,
+                        video_temp, splice_style=args.video_splice,
+                        vcodec=args.vcodec, crf=args.crf, preset=args.preset,
+                        target_duration=target,
+                    )
+                else:
+                    render_video_keep_ranges(
+                        args.input, keep, video_fades or [], fr, video_temp,
+                        splice_style=args.video_splice, vcodec=args.vcodec,
+                        crf=args.crf, preset=args.preset, target_duration=target,
+                    )
+                video_source = str(video_temp)
+                mux_vcodec = "copy"
+            print(f"      muxing video -> {args.output}", file=sys.stderr)
+            mux_av(video_source, mux_audio, args.output, vcodec=mux_vcodec)
+        finally:
+            if video_temp is not None:
+                video_temp.unlink(missing_ok=True)
+            if conformed_audio is not None:
+                conformed_audio.unlink(missing_ok=True)
+            Path(audio_master).unlink(missing_ok=True)
+            _cleanup_temps()
         return 0
 
     render_target = audio_dest
