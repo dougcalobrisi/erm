@@ -1,0 +1,11 @@
+{
+  "name": "erm",
+  "displayName": "erm — filler-word remover",
+  "description": "Install, use, and tune erm, the local CLI that strips disfluencies (um, uh, er, ah, hmm) from spoken audio.",
+  "version": "0.3.0",
+  "author": { "name": "Doug Calobrisi", "email": "doug@calobrisi.com" },
+  "homepage": "https://dougcalobrisi.github.io/erm/",
+  "repository": "https://github.com/dougcalobrisi/erm",
+  "license": "MIT",
+  "keywords": ["audio", "speech", "filler-words", "disfluency", "whisper", "ffmpeg", "podcast", "cli"]
+}

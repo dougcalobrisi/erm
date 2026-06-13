@@ -75,6 +75,31 @@ erm validate input.wav cleaned.wav --cuts cuts.json
 When `-o` / `--json` are omitted, output paths are written next to the input as
 `{stem}-cleaned-{YYYYMMDD-HHMMSS}.wav` and `{stem}-cuts-{YYYYMMDD-HHMMSS}.json`.
 
+## Use inside AI coding agents
+
+erm ships agent guidance so an AI assistant can install, run, and tune it for you.
+
+**Claude Code / Cowork (plugin):**
+
+```
+/plugin marketplace add dougcalobrisi/erm
+/plugin install erm@erm
+```
+
+This adds two skills: **`erm`** (install + clean a file, asks which mode/recipe
+fits) and **`erm-tune`** (diagnoses a bad result and maps the symptom to the
+right knob). Ask in plain language — "install erm", "clean up this podcast", "the
+splices sound smeared" — and the right skill triggers.
+
+**Other agents (Codex, Copilot, OpenCode, Cursor, Gemini CLI, pi.dev):**
+
+- A root [`AGENTS.md`](AGENTS.md) gives install/use/tune guidance, read
+  automatically by these tools.
+- The skills in [`skills/`](skills/) are open-format
+  [Agent Skills](https://agentskills.io). Copy them into your agent's skills
+  directory — `~/.claude/skills/` (Claude, OpenCode) or `~/.agents/skills/`
+  (Codex, OpenCode, pi.dev). Codex reads only `.agents/skills/`.
+
 ## How it works
 
 1. **Transcribe.** `faster-whisper` runs with `word_timestamps=True` and a
