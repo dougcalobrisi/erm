@@ -15,6 +15,10 @@ allowed-tools: Bash, Read, AskUserQuestion
 `erm` exposes ~30 flags that cluster into five knob groups. Tune by **symptom**,
 change **one cluster at a time**, and re-check with `--dry-run` + `validate`.
 
+**Launcher convention.** This skill assumes erm is already runnable (set up by the
+`erm` skill). In the commands below, `erm` means that launcher: `uvx erm …` if you
+ran it via uv, or plain `erm …` after activating the venv where it's installed.
+
 ## Resolving documentation
 
 Resolve detail in this order (broadest compatibility last):

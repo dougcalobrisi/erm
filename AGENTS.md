@@ -12,11 +12,17 @@ pi.dev, Claude Code, …) working with the tool.
 
 Requires **Python 3.11+** and **ffmpeg/ffprobe** on `PATH`.
 
+Prefer **uvx** (no persistent install; uv caches the env after first run). Where
+`uv` isn't available, fall back to a venv:
+
 ```sh
-pipx install erm      # recommended (isolated)
-# or: pip install erm
-erm --help            # verify
+uvx erm --help                       # tier 1: run straight from PyPI via uv
+# fallback (no uv on PATH):
+python3 -m venv .venv && source .venv/bin/activate && pip install erm && erm --help
 ```
+
+In the iterate loop below, `erm` means the launcher you resolved: `uvx erm …`
+under tier 1, or plain `erm …` after activating the venv.
 
 ffmpeg: `brew install ffmpeg` / `apt install ffmpeg` / `choco install ffmpeg`.
 Transcription runs on CPU by default; GPU needs CUDA runtime libs (`--device auto`

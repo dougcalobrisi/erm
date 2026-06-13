@@ -28,20 +28,36 @@ environments than the last):
 
 Never guess flag names or defaults — read one of the above.
 
-## 1. Install
+## 1. Install / run
 
 `erm` needs **Python 3.11+** and **ffmpeg/ffprobe** on `PATH`.
 
 1. Check ffmpeg: `ffmpeg -version`. If missing, suggest the OS install
    (`brew install ffmpeg`, `apt install ffmpeg`, `choco install ffmpeg`).
-2. Install erm from PyPI — prefer an isolated install:
-   - `pipx install erm`  (recommended), or
-   - `pip install erm`  (into the active venv).
-3. Verify: `erm --help` prints usage.
+2. Resolve a launcher — **prefer uv** (broadest, no persistent install):
+   - **Tier 1 — uvx (preferred).** If `uv --version` succeeds, run erm straight
+     from PyPI with `uvx erm …` — no install step; uv fetches and caches the
+     environment on first run, so later runs are fast. Pin a version with
+     `uvx erm@<version> …` when needed. Verify: `uvx erm --help`.
+   - **Tier 2 — venv fallback (no `uv` on PATH).** Create an isolated env and
+     install from PyPI:
+     ```sh
+     python3 -m venv .venv
+     source .venv/bin/activate
+     pip install erm
+     erm --help   # verify
+     ```
+
+**Launcher convention.** In the commands throughout this skill, `erm` means the
+launcher you resolved above: prefix with `uvx ` under tier 1
+(e.g. `uvx erm INPUT.wav --dry-run`), or use plain `erm` after activating the
+venv under tier 2.
 
 Transcription runs on CPU by default (no setup). GPU is optional and needs the
-CUDA runtime libs; `--device auto` falls back to CPU. See the `transcription`
-docs page for details.
+CUDA runtime libs; `--device auto` falls back to CPU. Add the CUDA wheels to the
+same environment — `uvx --with nvidia-cublas-cu12 --with nvidia-cudnn-cu12 erm …`
+under tier 1, or `pip install nvidia-cublas-cu12 nvidia-cudnn-cu12` into the venv
+under tier 2. See the `transcription` docs page for details.
 
 ## 2. Ask before choosing a command
 

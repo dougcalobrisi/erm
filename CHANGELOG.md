@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Skill / agent install guidance prefers `uvx`.** The `erm` and `erm-tune`
+  skills and `AGENTS.md` now recommend running erm via `uvx erm …` (no
+  persistent install; uv caches the env after first run) and fall back to a
+  Python venv (`python3 -m venv` + `pip install erm`) only where `uv` isn't
+  available — replacing the prior `pipx install` / `pip install` recommendation.
+
 ### Added
 
 - **`--add-fillers`** and **`--remove-fillers`** — adjust the pass-1 word list
