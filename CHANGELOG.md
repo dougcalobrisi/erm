@@ -5,15 +5,6 @@ All notable changes to `erm` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-### Changed
-
-- **Default `--model` is now `large-v3`** (was `medium.en`). The larger model
-  catches more fillers and produces tighter word boundaries, improving detection
-  quality out of the box. Override with `--model medium.en` / `--model small.en`
-  for faster, lower-accuracy runs.
-
 ## [0.3.0] - 2026-06-12
 
 Render modes and pause spacing. Every new behavior is off by default — a default
@@ -45,6 +36,10 @@ additive fields.
 
 ### Changed
 
+- **Default `--model` is now `large-v3`** (was `medium.en`). The larger model
+  catches more fillers and produces tighter word boundaries, improving detection
+  quality out of the box. Override with `--model medium.en` / `--model small.en`
+  for faster, lower-accuracy runs.
 - `erm validate` now checks output duration per mode, reading `mode` /
   `injected_gap_s` from the cut list — `silence`: `output ≈ input`; `remove`:
   `output ≈ input − cuts + injected_gap_s`. Cut lists without these fields
