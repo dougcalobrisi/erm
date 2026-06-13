@@ -1,0 +1,12 @@
+{
+  "name": "erm",
+  "owner": { "name": "Doug Calobrisi", "email": "doug@calobrisi.com" },
+  "description": "Skills for installing, using, and tuning erm — the local filler-word remover for spoken audio.",
+  "plugins": [
+    {
+      "name": "erm",
+      "source": ".",
+      "description": "Install, use, and tune the erm audio filler-word remover (skills: erm, erm-tune)."
+    }
+  ]
+}
