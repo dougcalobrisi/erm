@@ -109,14 +109,35 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create and push tag
+      - name: Pin plugin.json to the released version and tag
         run: |
-          TAG="v${{ needs.preflight.outputs.version }}"
+          VERSION="${{ needs.preflight.outputs.version }}"
+          TAG="v${VERSION}"
+          PLUGIN=".claude-plugin/plugin.json"
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Pin the plugin manifest to the version we just published. The dev
+          # bump (version-bump.yml) only moves the Python version forward, so
+          # plugin.json stays at the latest *released* version. Edit only the
+          # version line to keep the diff minimal.
+          sed -i -E "s/(\"version\"[[:space:]]*:[[:space:]]*\")[^\"]*(\")/\1${VERSION}\2/" "$PLUGIN"
+
+          if ! git diff --quiet -- "$PLUGIN"; then
+            git commit --only "$PLUGIN" -m "chore: pin plugin.json to released ${TAG}"
+          else
+            echo "plugin.json already at ${VERSION}"
+          fi
+
+          # Tag the commit that carries the pinned plugin.json, then push the
+          # branch and tag in a single push so CI never sees main updated
+          # before the matching tag exists (the version-guard would flap).
           git tag -a "$TAG" -m "Release $TAG"
-          git push origin "$TAG"
+          git push origin "HEAD:main" "refs/tags/$TAG"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
