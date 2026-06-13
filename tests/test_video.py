@@ -330,3 +330,23 @@ def test_remove_video_errors_when_fps_undeterminable(tmp_path, monkeypatch):
     leftovers = list(tmp_path.glob("*-audiomaster-*.wav")) \
         + list(tmp_path.glob("*-analysis-*.wav"))
     assert leftovers == [], f"temp files leaked: {leftovers}"
+
+
+def test_render_failure_does_not_leak_temps(tmp_path, monkeypatch):
+    # If an ffmpeg op raises mid-pipeline (here the audio render), the audio
+    # master and the extracted analysis WAV must be cleaned on the way out, not
+    # leaked. The exception still propagates (the CLI surfaces it upstream).
+    clip = tmp_path / "clip.mov"
+    _make_av(clip)
+
+    def _boom(*a, **k):
+        raise RuntimeError("ffmpeg failed (simulated render error)")
+
+    monkeypatch.setattr(cli, "render", _boom)
+    out = tmp_path / "out.mov"
+    with pytest.raises(RuntimeError, match="simulated render error"):
+        _run(monkeypatch, [str(clip), "--video", "--vcodec", "mpeg4",
+                           "-o", str(out), "--no-detect-gaps", "--no-room-tone"])
+    leftovers = list(tmp_path.glob("*-audiomaster-*.wav")) \
+        + list(tmp_path.glob("*-analysis-*.wav"))
+    assert leftovers == [], f"temp files leaked on render failure: {leftovers}"

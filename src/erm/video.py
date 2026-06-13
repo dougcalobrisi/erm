@@ -10,7 +10,6 @@ dependency.
 
 from __future__ import annotations
 
-import subprocess
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -65,13 +64,12 @@ def probe_video(path: str | Path) -> VideoInfo:
     (`disposition.attached_pic=1`) is reported as `has_video=False` so an mp3's
     album art is never treated as motion video.
     """
-    out = subprocess.run(
+    out = run_ffmpeg(
         ["ffprobe", "-v", "error", "-select_streams", "v:0",
          "-show_entries",
          "stream=codec_name,width,height,avg_frame_rate,r_frame_rate,"
          "pix_fmt,sample_aspect_ratio:stream_disposition=attached_pic",
          "-of", "default=noprint_wrappers=1", str(path)],
-        capture_output=True, text=True, check=True,
     ).stdout
 
     fields: dict[str, str] = {}
@@ -326,22 +324,28 @@ def render_video_with_gaps(
     run_ffmpeg(cmd)
 
 
-def video_stream_duration(path: str | Path) -> float | None:
-    """Duration (s) of the first video stream (``v:0``), or None if unreadable.
+def stream_duration(path: str | Path, stream: str = "v:0") -> float | None:
+    """Duration (s) of a single stream (e.g. ``"v:0"``/``"a:0"``), or None.
 
-    Reads the *stream* duration, not the container's `format=duration`, because
-    silence mode conforms the audio master to the picture's own length.
+    Reads the *stream* duration, not the container's `format=duration`: silence
+    mode conforms the audio master to the picture's own length, and the validate
+    A/V-parity check compares the two streams' individual durations. Returns None
+    when ffprobe reports no parseable duration (e.g. ``N/A``).
     """
-    out = subprocess.run(
-        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+    out = run_ffmpeg(
+        ["ffprobe", "-v", "error", "-select_streams", stream,
          "-show_entries", "stream=duration",
          "-of", "default=nokey=1:noprint_wrappers=1", str(path)],
-        capture_output=True, text=True, check=True,
     ).stdout.strip()
     try:
         return float(out)
     except ValueError:
         return None
+
+
+def video_stream_duration(path: str | Path) -> float | None:
+    """Duration (s) of the first video stream (``v:0``), or None if unreadable."""
+    return stream_duration(path, "v:0")
 
 
 def conform_audio_to_duration(audio_path: str | Path, output_path: str | Path,

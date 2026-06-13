@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **First-class video I/O (`--video`)** — feed `erm` a video file and, by
+  default, still get the cleaned audio only (`.wav`, today's behavior and the
+  common "pull the audio out of this video" case). Pass `--video` to render the
+  picture too: the output container is inferred from the input (`-o`'s extension
+  overrides), and A/V stays in sync by construction (≤1 frame) — both streams
+  render from the same edit timeline with the same frame-snapped crossfades, and
+  the picture is conformed to the audio master's exact length.
+  - **`--video-splice {crossfade,cut}`** — `crossfade` (default) dissolves each
+    splice; `cut` makes hard jump cuts (both streams hard-concat, so they can't
+    drift).
+  - **`--vcodec` / `--crf` / `--preset`** — encoder knobs for the re-encoded
+    picture (remove mode). `--mode silence` stream-copies the picture untouched
+    (lossless, frame-exact).
+  - **`--min-gap-ms` with `--video`** plays the removed footage *through* the
+    injected pause (muted) instead of freezing the frame.
+  - Audio is stored losslessly where the container allows (PCM in mov/mkv/avi);
+    mp4 gets AAC 256k, webm gets Opus.
+  - `validate` gains an **A/V-sync check** (video outputs only): the picture and
+    audio streams must end within ~1 frame of each other.
+  - See the [render-pipeline design doc](docs/render-pipeline.md) (Part 7) for
+    the A/V-sync derivation.
 - **`--add-fillers`** and **`--remove-fillers`** — adjust the pass-1 word list
   relative to the defaults instead of replacing it. `--fillers` still overrides
   the whole set; `--add-fillers "basically,like"` unions words on top of it, and

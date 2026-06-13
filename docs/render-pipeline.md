@@ -317,6 +317,15 @@ together:
 neither drifts; the audio is the same hard-cut concat the audio path already
 uses when a fade is zero.
 
+**All-or-nothing crossfade.** Both renderers crossfade only when *every* splice
+fade is positive (`render`'s `all(cf > 0)`, the video's `not all(d > 0)`); if any
+one fade is zero they both fall back to `concat` for the whole stream. So a
+single splice whose snapped fade rounds to zero turns the entire render into hard
+cuts on both streams. The two-frame floor on positive fades makes a true zero
+rare (it needs a fade that rounds to 0 frames outright), and crucially audio and
+video make the *same* choice, so A/V parity always holds — but the visual result
+can flip from dissolves to jump cuts at that threshold.
+
 ## The tail conform
 
 `concat` (the `cut` path) has no fade to absorb the video's frame-quantized cut

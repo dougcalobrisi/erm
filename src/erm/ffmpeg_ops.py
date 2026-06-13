@@ -92,11 +92,10 @@ def has_video_stream(path: str | Path) -> bool:
     :func:`erm.video.probe_video` (which also keys off the first video stream) —
     the two never disagree about whether an input "has video".
     """
-    out = subprocess.run(
+    out = run_ffmpeg(
         ["ffprobe", "-v", "error", "-select_streams", "v:0",
          "-show_entries", "stream_disposition=attached_pic",
          "-of", "default=noprint_wrappers=1", str(path)],
-        capture_output=True, text=True, check=True,
     ).stdout
     # A single `DISPOSITION:attached_pic=<0|1>` line for the first video stream
     # (none printed when there is no video stream at all). 0 = real motion video.

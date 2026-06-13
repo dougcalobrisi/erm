@@ -378,9 +378,13 @@ def _cmd_remove(args: argparse.Namespace) -> int:
     # audioread/ffmpeg decoder on the video container. Audio-only inputs are
     # passed through untouched (byte-identical behavior). This is analysis-only:
     # rendering and denoising still operate on the full-quality `args.input`.
+    # `probe_video` (run above under --video) already keys off the first video
+    # stream the same way `has_video_stream` does, so reuse its verdict instead
+    # of probing the input a second time; only probe here when --video was off.
     original_audio = args.input
     analysis_wav: Path | None = None
-    if has_video_stream(args.input):
+    input_has_video = video_info.has_video if args.video else has_video_stream(args.input)
+    if input_has_video:
         analysis_wav = _timestamped(args.input, "analysis", "wav")
         print(f"      extracting audio for analysis -> {analysis_wav}",
               file=sys.stderr)
@@ -670,74 +674,89 @@ def _cmd_remove(args: argparse.Namespace) -> int:
     if needs_post_denoise or needs_room_tone:
         render_target = str(_timestamped(args.input, "raw", "wav"))
 
-    if args.mode == "silence":
-        render_silenced(render_input, [(c.start, c.end) for c in cuts],
-                        render_target)
-    else:
-        render(render_input, keep, render_target,
-               crossfade_ms=args.crossfade_ms,
-               min_crossfade_ms=args.min_crossfade_ms,
-               max_crossfade_ms=args.max_crossfade_ms,
-               crossfade_factor=args.crossfade_factor,
-               words=words,
-               gap_inserts=gap_inserts,
-               min_gap_s=args.min_gap_ms / 1000.0,
-               fades=video_fades)
-
-    current = render_target
-    if needs_post_denoise:
-        print(f"      denoising output...", file=sys.stderr)
-        next_target = (audio_dest if not needs_room_tone
-                       else str(_timestamped(args.input, "denoised-out", "wav")))
-        denoise_to(current, next_target,
-                   nr=args.denoise_nr, nf=args.denoise_nf)
-        if current != audio_dest:
-            Path(current).unlink(missing_ok=True)
-        current = next_target
-
-    if needs_room_tone:
-        # Always sample the room tone from the *original* — that's what has
-        # the real ambient character. Denoising would strip it.
-        skip_overlay = False
-        tone_start = tone_end = 0.0
-        if args.room_tone_source == "auto":
-            if audio is None:
-                audio, sr = load_audio_mono(original_audio)
-            region = find_quiet_region(audio, sr, words)
-            if region is None:
-                print("      room tone: no quiet region found — skipping",
-                      file=sys.stderr)
-                if current != audio_dest:
-                    Path(audio_dest).unlink(missing_ok=True)
-                    Path(current).rename(audio_dest)
-                skip_overlay = True
-            else:
-                tone_start, tone_end = region
+    # Any ffmpeg op below (the audio render, the post-denoise pass, the room-tone
+    # overlay, or the video render/mux inside `_finalize`) can raise. If one does
+    # mid-pipeline, the audio-master temp and the analysis/denoise intermediates
+    # would otherwise leak, so clean them on the way out before re-raising. The
+    # success path cleans up inside `_finalize`; this only covers the error path.
+    try:
+        if args.mode == "silence":
+            render_silenced(render_input, [(c.start, c.end) for c in cuts],
+                            render_target)
         else:
-            try:
-                tone_start, tone_end = _parse_room_tone_source(args.room_tone_source)
-            except ValueError:
-                print(f"error: invalid --room-tone-source {args.room_tone_source!r}",
-                      file=sys.stderr)
-                if current != audio_dest:
-                    Path(current).unlink(missing_ok=True)
-                if render_video:
-                    Path(audio_dest).unlink(missing_ok=True)
-                _cleanup_temps()
-                return 2
-        if not skip_overlay:
-            print(f"      room tone: {tone_start:.2f}-{tone_end:.2f}s "
-                  f"({(tone_end-tone_start)*1000:.0f}ms) "
-                  f"@ {args.room_tone_level_db:.1f}dB", file=sys.stderr)
-            tone_path = _timestamped(args.input, "tone", "wav")
-            extract_segment(args.input, tone_start, tone_end, tone_path)
-            overlay_room_tone(current, tone_path, audio_dest,
-                              level_db=args.room_tone_level_db)
-            Path(tone_path).unlink(missing_ok=True)
+            render(render_input, keep, render_target,
+                   crossfade_ms=args.crossfade_ms,
+                   min_crossfade_ms=args.min_crossfade_ms,
+                   max_crossfade_ms=args.max_crossfade_ms,
+                   crossfade_factor=args.crossfade_factor,
+                   words=words,
+                   gap_inserts=gap_inserts,
+                   min_gap_s=args.min_gap_ms / 1000.0,
+                   fades=video_fades)
+
+        current = render_target
+        if needs_post_denoise:
+            print(f"      denoising output...", file=sys.stderr)
+            next_target = (audio_dest if not needs_room_tone
+                           else str(_timestamped(args.input, "denoised-out", "wav")))
+            denoise_to(current, next_target,
+                       nr=args.denoise_nr, nf=args.denoise_nf)
             if current != audio_dest:
                 Path(current).unlink(missing_ok=True)
+            current = next_target
 
-    return _finalize(audio_dest)
+        if needs_room_tone:
+            # Always sample the room tone from the *original* — that's what has
+            # the real ambient character. Denoising would strip it.
+            skip_overlay = False
+            tone_start = tone_end = 0.0
+            if args.room_tone_source == "auto":
+                if audio is None:
+                    audio, sr = load_audio_mono(original_audio)
+                region = find_quiet_region(audio, sr, words)
+                if region is None:
+                    print("      room tone: no quiet region found — skipping",
+                          file=sys.stderr)
+                    if current != audio_dest:
+                        Path(audio_dest).unlink(missing_ok=True)
+                        Path(current).rename(audio_dest)
+                    skip_overlay = True
+                else:
+                    tone_start, tone_end = region
+            else:
+                try:
+                    tone_start, tone_end = _parse_room_tone_source(args.room_tone_source)
+                except ValueError:
+                    print(f"error: invalid --room-tone-source {args.room_tone_source!r}",
+                          file=sys.stderr)
+                    if current != audio_dest:
+                        Path(current).unlink(missing_ok=True)
+                    if render_video:
+                        Path(audio_dest).unlink(missing_ok=True)
+                    _cleanup_temps()
+                    return 2
+            if not skip_overlay:
+                print(f"      room tone: {tone_start:.2f}-{tone_end:.2f}s "
+                      f"({(tone_end-tone_start)*1000:.0f}ms) "
+                      f"@ {args.room_tone_level_db:.1f}dB", file=sys.stderr)
+                tone_path = _timestamped(args.input, "tone", "wav")
+                extract_segment(args.input, tone_start, tone_end, tone_path)
+                overlay_room_tone(current, tone_path, audio_dest,
+                                  level_db=args.room_tone_level_db)
+                Path(tone_path).unlink(missing_ok=True)
+                if current != audio_dest:
+                    Path(current).unlink(missing_ok=True)
+
+        return _finalize(audio_dest)
+    except BaseException:
+        # render_video → audio_dest is a temp master; audio-only → it's the real
+        # output, which we leave in place (matching prior behavior). Either way
+        # drop the analysis/denoise intermediates. `_finalize` already cleaned
+        # these on its own failure, so these unlinks are idempotent (missing_ok).
+        if render_video:
+            Path(audio_dest).unlink(missing_ok=True)
+        _cleanup_temps()
+        raise
 
 
 def _cmd_validate(args: argparse.Namespace) -> int:

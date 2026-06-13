@@ -6,26 +6,10 @@ import json
 from pathlib import Path
 from typing import Iterable
 
-import subprocess
-
 from .asr import transcribe
 from .ffmpeg_ops import ffprobe_duration
 from .fillers import DEFAULT_FILLERS, is_filler, normalize_word
-from .video import probe_video
-
-
-def _stream_duration(path: str | Path, stream: str) -> float | None:
-    """Duration (s) of a single stream (e.g. ``"v:0"``/``"a:0"``), or None."""
-    out = subprocess.run(
-        ["ffprobe", "-v", "error", "-select_streams", stream,
-         "-show_entries", "stream=duration",
-         "-of", "default=nokey=1:noprint_wrappers=1", str(path)],
-        capture_output=True, text=True, check=True,
-    ).stdout.strip()
-    try:
-        return float(out)
-    except ValueError:
-        return None
+from .video import probe_video, stream_duration
 
 
 def validate_output(
@@ -94,8 +78,8 @@ def validate_output(
     # and conformed to the audio, so the bar is one frame plus a small epsilon.
     out_video = probe_video(output_path)
     if out_video.has_video:
-        video_dur = _stream_duration(output_path, "v:0")
-        audio_dur = _stream_duration(output_path, "a:0")
+        video_dur = stream_duration(output_path, "v:0")
+        audio_dur = stream_duration(output_path, "a:0")
         fps = out_video.fps or 30.0
         av_tolerance_s = 1.0 / fps + 0.005
         if video_dur is None or audio_dur is None:
