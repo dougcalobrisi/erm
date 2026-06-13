@@ -15,7 +15,7 @@ with the cut size, and laid over a constant looped sample of the recording's
 own room tone so the noise floor stays uniform across edits.
 
 > **Full docs at [dougcalobrisi.github.io/erm](https://dougcalobrisi.github.io/erm/)**
-> (source in [`docs/`](docs/README.md)): usage guides for getting good
+> (source in [`docs/`](docs/index.md)): usage guides for getting good
 > results — [tuning & workflow](docs/usage.md), [recipes](docs/recipes.md),
 > [troubleshooting](docs/troubleshooting.md) — plus maintainer-facing design docs
 > on the detection passes, render pipeline, denoise/room-tone, and transcription.
