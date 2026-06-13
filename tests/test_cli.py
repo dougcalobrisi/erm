@@ -89,7 +89,7 @@ def test_remove_parser_defaults():
     args = cli._build_remove_parser().parse_args(["in.wav"])
     assert args.input == "in.wav"
     assert args.output is None
-    assert args.model == "medium.en"
+    assert args.model == "large-v3"
     assert args.device == "auto"
     assert args.compute_type == "auto"
     assert args.denoise == "hybrid"
@@ -261,7 +261,7 @@ def test_validate_parser_defaults():
     assert args.input == "in.wav"
     assert args.output == "out.wav"
     assert args.cuts is None
-    assert args.model == "medium.en"
+    assert args.model == "large-v3"
     assert args.device == "auto"
     assert args.report is None
 

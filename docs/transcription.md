@@ -8,14 +8,14 @@ three non-obvious choices in this module.
 
 ## Model, device, compute type
 
-`transcribe(path, model_name="medium.en", verbatim=True, device="auto",
+`transcribe(path, model_name="large-v3", verbatim=True, device="auto",
 compute_type="auto")` maps directly to the CLI's `--model`, `--device`, and
 `--compute-type`. `faster_whisper.WhisperModel` is **lazy-imported** inside the
 function (`asr.py:51`) — it's heavy, and the pure-logic test suite must import
 the rest of the package without paying for it (see the README's Tests section).
 
-`medium.en` is the default for a balance of speed and accuracy; `small.en` is
-faster, `large-v3` more accurate. The model choice matters for detection quality:
+`large-v3` is the default for best accuracy; `medium.en` is a faster balance and
+`small.en` faster still. The model choice matters for detection quality:
 a larger model produces tighter word boundaries, which directly improves the
 intra-word and overlong detectors (they reason about word duration). `device` and
 `compute_type` are passed straight through to `WhisperModel`.

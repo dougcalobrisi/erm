@@ -54,9 +54,9 @@ Why these tradeoffs exist:
 Three knobs move sensitivity together. The defaults are tuned to catch a lot
 without trimming real speech:
 
-- `--model` — the biggest lever. `medium.en` (default) is a good balance;
-  `large-v3` catches more fillers and gives tighter word boundaries (slower);
-  `small.en` is faster but coarser.
+- `--model` — the biggest lever. `large-v3` (default) catches the most fillers
+  and gives the tightest word boundaries; `medium.en` is a faster balance and
+  `small.en` is faster still but coarser.
 - `--detect-gaps` (on) — runs the three audio detectors that catch fillers
   Whisper drops or fuses into a word. Turning it off leaves only the word-list
   match.

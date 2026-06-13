@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Default `--model` is now `large-v3`** (was `medium.en`). The larger model
+  catches more fillers and produces tighter word boundaries, improving detection
+  quality out of the box. Override with `--model medium.en` / `--model small.en`
+  for faster, lower-accuracy runs.
+
 ## [0.3.0] - 2026-06-12
 
 Render modes and pause spacing. Every new behavior is off by default — a default

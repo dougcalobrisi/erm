@@ -7,7 +7,7 @@ Local CLI that strips disfluencies (`um`, `uh`, `er`, `erm`, `ah`, `hmm`, `mhm`,
 recordings of English speech.
 
 It uses [`faster-whisper`](https://github.com/SYSTRAN/faster-whisper) (running
-the `medium.en` Whisper model by default — override with `--model`) for
+the `large-v3` Whisper model by default — override with `--model`) for
 word-level timestamps, three audio-domain detectors that catch fillers Whisper
 hides, and ffmpeg for the cuts. Each splice is snapped to a local energy
 minimum and zero-crossing, optionally crossfaded with a length that scales
@@ -159,7 +159,7 @@ floor dB).
 
 | Flag | Default | Notes |
 |------|---------|-------|
-| `--model` | `medium.en` | Any faster-whisper model. `small.en` faster; `large-v3` more accurate. |
+| `--model` | `large-v3` | Any faster-whisper model. `medium.en` / `small.en` faster but less accurate. |
 | `--device` | `auto` | `auto` / `cpu` / `cuda`. `auto` uses the GPU when available and falls back to CPU if the CUDA runtime can't be loaded (see [Transcription device](#transcription-device-gpu-vs-cpu)). |
 | `--compute-type` | `auto` | faster-whisper compute type (e.g. `int8`, `float16`). `auto` lets the backend choose. |
 | `--fillers` | `ah,er,erm,hmm,mhm,mm,uh,uh-huh,um` | Comma-separated stems. Elongations matched dynamically. |
