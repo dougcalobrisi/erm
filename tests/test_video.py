@@ -231,6 +231,23 @@ def test_remove_video_min_gap_plays_through(tmp_path, monkeypatch):
     _assert_av_synced(out)
 
 
+def test_remove_video_min_gap_exceeding_removed_span(tmp_path, monkeypatch):
+    # An aggressive --min-gap-ms can request a longer injected pause than the
+    # removed span actually holds. The played-through video then clamps its read
+    # to the removed footage and clone-pads the rest, keeping each gap node
+    # exactly the injected length — so A/V parity must still hold (the picture
+    # never spills into the next kept fragment and never drifts).
+    clip = tmp_path / "clip.mov"
+    _make_av(clip)
+    out = tmp_path / "out_biggap.mov"
+    rc = _run(monkeypatch, [str(clip), "--video", "--min-gap-ms", "900",
+                            "--vcodec", "mpeg4", "-o", str(out),
+                            "--no-detect-gaps", "--no-room-tone"],
+              words=_TIGHT_WORDS)
+    assert rc == 0
+    _assert_av_synced(out)
+
+
 # ----- format inference & guards -------------------------------------------
 
 def test_output_extension_inferred_from_input(tmp_path, monkeypatch):
@@ -243,6 +260,11 @@ def test_output_extension_inferred_from_input(tmp_path, monkeypatch):
     cli._cmd_remove(args)
     assert args.output.endswith(".mp4")
     assert _has_stream(Path(args.output), "v")
+    # mp4 re-encodes the PCM master to AAC (the one render path whose audio is
+    # not stream-copied). AAC carries encoder-priming delay, so assert real A/V
+    # parity here — not just stream presence — to catch priming drift that the
+    # mov/copy paths can't surface.
+    _assert_av_synced(Path(args.output))
 
 
 def test_video_container_output_without_video_flag_errors(tmp_path, monkeypatch):

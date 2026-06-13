@@ -29,10 +29,12 @@ def run_ffmpeg(cmd: Sequence[str]) -> subprocess.CompletedProcess[str]:
 
 
 def ffprobe_duration(path: str | Path) -> float:
-    out = subprocess.run(
+    # Routed through run_ffmpeg so a probe failure surfaces ffprobe's stderr
+    # (a RuntimeError with the diagnostic tail) instead of a bare
+    # CalledProcessError — consistent with every other ffmpeg/ffprobe call here.
+    out = run_ffmpeg(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration",
          "-of", "default=nokey=1:noprint_wrappers=1", str(path)],
-        capture_output=True, text=True, check=True,
     ).stdout.strip()
     return float(out)
 
@@ -45,11 +47,13 @@ def _probe_audio_stream(path: str | Path) -> tuple[int, int]:
     uniform sample rate and channel layout across its inputs — joins them
     without resampling the real audio.
     """
-    out = subprocess.run(
+    # Routed through run_ffmpeg so a probe failure surfaces ffprobe's stderr
+    # instead of a bare CalledProcessError — consistent with every other
+    # ffmpeg/ffprobe call here.
+    out = run_ffmpeg(
         ["ffprobe", "-v", "error", "-select_streams", "a:0",
          "-show_entries", "stream=sample_rate,channels",
          "-of", "default=noprint_wrappers=1", str(path)],
-        capture_output=True, text=True, check=True,
     ).stdout
     fields: dict[str, str] = {}
     for line in out.splitlines():

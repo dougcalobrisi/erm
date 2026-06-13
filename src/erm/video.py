@@ -265,13 +265,33 @@ def render_video_with_gaps(
     # Gap nodes: the removed footage right after keep i, played through muted.
     gap_label: dict[tuple[int, int], str] = {}
     for i in range(n_keep):
+        # The removed span this keep's gaps draw from ends at the next keep's
+        # start (gaps only ever land between keeps, never after the last one).
+        next_start = keep_ranges[i + 1][0] if i + 1 < n_keep else None
         for j, dur in enumerate(gaps_after.get(i, [])):
             # Stack consecutive gaps after the same keep along the removed span.
             prior = sum(gaps_after[i][:j])
             gstart = keep_ranges[i][1] + prior
             label = f"g{i}_{j}"
-            parts.append(f"[src{src}]trim=start={gstart:.6f}:duration={dur:.6f},"
-                         f"setpts=PTS-STARTPTS[{label}]")
+            # The injected gap (= min_gap_s − surviving_pause) is bounded by
+            # --min-gap-ms, NOT by how much footage was actually cut here. An
+            # aggressive floor over a short filler can request a longer pause
+            # than the removed span holds; reading `dur` straight would then
+            # spill into the *next* kept fragment's frames (you'd glimpse
+            # upcoming content under the pause). Cap the read at the removed
+            # span and clone-pad (freeze the last removed frame) for the
+            # remainder, so the node is still exactly `dur` long — A/V parity
+            # holds — but never shows footage belonging to a kept fragment.
+            available = (next_start - gstart) if next_start is not None else dur
+            read = min(dur, available)
+            if read >= dur or read <= 0:
+                parts.append(f"[src{src}]trim=start={gstart:.6f}:duration={dur:.6f},"
+                             f"setpts=PTS-STARTPTS[{label}]")
+            else:
+                parts.append(f"[src{src}]trim=start={gstart:.6f}:duration={read:.6f},"
+                             f"setpts=PTS-STARTPTS,"
+                             f"tpad=stop_mode=clone:stop_duration={dur - read:.6f}"
+                             f"[{label}]")
             lengths[label] = dur
             gap_label[(i, j)] = label
             src += 1

@@ -347,6 +347,15 @@ so the excised disfluency rolls under the injected pause instead of the frame
 freezing. Injected gap durations are frame-snapped (CLI side) so audio and video
 inject identical lengths.
 
+The injected pause is `min_gap_s − surviving_pause`, bounded by `--min-gap-ms`
+rather than by how much footage was cut at that splice — so an aggressive floor
+over a short filler can ask for a longer pause than the removed span holds.
+Reading that straight would spill the played-through footage into the *next*
+kept fragment (you'd glimpse upcoming content under the pause), so the read is
+**capped at the removed span** and clone-padded (the last removed frame freezes)
+for any remainder. The gap node stays exactly the injected length — A/V parity
+is untouched — but never shows frames belonging to a kept fragment.
+
 ## Codec by container (`audio_mux_args`)
 
 The pipeline produces a clean PCM master; the mux preserves it where the
@@ -354,6 +363,15 @@ container allows — `-c:a copy` (PCM) into mov/mkv/avi, **AAC 256k** for mp4
 (no universal lossless), **Opus 160k** for webm. The picture is `-c:v copy`'d
 through the mux (silence mode copies the source untouched; remove mode copies
 the already-encoded splice), never re-encoded twice.
+
+**Encoder priming.** mov/mkv/avi copy the PCM master sample-for-sample, so audio
+starts at exactly t=0. mp4 (AAC) and webm (Opus) re-encode it, and lossy
+encoders prepend priming/pre-skip samples — on the order of ~20 ms for AAC. Both
+streams still *start* at t=0 (the picture is rendered from the same timeline with
+no leading offset) and the priming sits well inside the one-frame `av_sync`
+tolerance, so parity holds; the mp4 path is covered by a real-ffmpeg parity test
+(not just a stream-presence check) precisely because it is the one render path
+whose audio is not stream-copied.
 
 The final mux adds `-shortest`, ending the output when the first stream ends.
 In **remove** mode the picture is already conformed to the audio master's exact
