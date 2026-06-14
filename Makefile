@@ -1,6 +1,6 @@
 # erm Makefile
 
-.PHONY: all setup lint test test-cov clean build build-python publish publish-python publish-test publish-dry-run sync-version help
+.PHONY: all setup lint test test-cov docs-cli clean build build-python publish publish-python publish-test publish-dry-run sync-version help
 
 all: help
 
@@ -20,6 +20,10 @@ test:
 # Run pytest with coverage
 test-cov:
 	uv run pytest tests/ -v --cov=src/erm --cov-report=term-missing
+
+# Regenerate docs/cli-reference.md from erm's argparse parsers
+docs-cli:
+	uv run python scripts/gen_cli_docs.py
 
 # Remove build/dist artifacts
 clean:
@@ -61,6 +65,9 @@ help:
 	@echo "  test             Run pytest"
 	@echo "  test-cov         Run pytest with coverage"
 	@echo "  clean            Remove build/dist/__pycache__ artifacts"
+	@echo ""
+	@echo "Docs:"
+	@echo "  docs-cli         Regenerate docs/cli-reference.md from the CLI parsers"
 	@echo ""
 	@echo "Build & publish:"
 	@echo "  build            Build wheel + sdist into dist/"

@@ -50,19 +50,52 @@ markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        # Render ```mermaid blocks as diagrams. Material auto-loads mermaid.js
+        # when this fence is registered; it renders client-side, so the static
+        # --strict build stays offline-clean.
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.details
+  - pymdownx.snippets:
+      # Transclude the repo-root CHANGELOG.md into docs/changelog.md so the
+      # changelog lives on the site without duplicating it. mkdocs builds from
+      # the repo root, so "." resolves CHANGELOG.md; check_paths makes --strict
+      # fail if the file is ever moved or renamed.
+      base_path: ["."]
+      check_paths: true
 
 nav:
   - Home: index.md
+  - Installation: installation.md
   - Usage guides:
       - Tuning & workflow: usage.md
       - Recipes: recipes.md
       - Working with video: video.md
       - Troubleshooting: troubleshooting.md
+  - Reference:
+      - CLI reference: cli-reference.md
+      - FAQ: faq.md
+      - Changelog: changelog.md
   - Internals (design):
+      - Architecture overview: architecture.md
+      - Concepts & glossary: concepts.md
       - Detection: detection.md
       - Render pipeline: render-pipeline.md
       - Video render & A/V sync: video-render.md
       - Denoise & room tone: denoise-and-room-tone.md
       - Transcription: transcription.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/dougcalobrisi/erm
+      name: erm on GitHub
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/erm/
+      name: erm on PyPI
+    - icon: fontawesome/solid/blog
+      link: https://doug.sh/posts/erm-a-local-cli-that-strips-ums-uhs-and-erms-from-speech/
+      name: Introducing erm (blog post)

@@ -13,15 +13,22 @@ of the recording's own room tone so the noise floor stays uniform across edits.
 
 Nothing leaves your machine — no API keys, no uploads.
 
+For the story behind it, see the introductory blog post,
+[*erm: a local CLI that strips ums, uhs, and erms from speech*](https://doug.sh/posts/erm-a-local-cli-that-strips-ums-uhs-and-erms-from-speech/).
+The package is on [PyPI](https://pypi.org/project/erm/) and the source is on
+[GitHub](https://github.com/dougcalobrisi/erm).
+
 ## Quick start
 
-Requires Python 3.11+ and `ffmpeg` / `ffprobe` on your `PATH`.
+Requires Python 3.11+ and `ffmpeg` / `ffprobe` on your `PATH`. With
+[`uv`](https://docs.astral.sh/uv/) you can run it with no install:
 
 ```sh
-python3.13 -m venv .venv
-source .venv/bin/activate
-pip install -e '.[dev]'
+uvx erm input.wav
 ```
+
+See [Installation](installation.md) for the venv / dev-install paths and GPU
+setup. Then the common loop:
 
 ```sh
 # Remove fillers — output and cut-list are auto-named next to the input.
@@ -41,9 +48,9 @@ The recommended loop is **`--dry-run` → read the cut list → render** — see
 !!! tip "GPU is optional"
     Transcription runs on CPU by default and needs no extra setup. With
     `--device auto` (the default), `erm` will use an NVIDIA GPU if the CUDA
-    runtime is present and otherwise fall back to CPU automatically. Full flag
-    list and GPU setup live in the
-    [README](https://github.com/dougcalobrisi/erm#readme).
+    runtime is present and otherwise fall back to CPU automatically. The full
+    flag list lives in the [CLI reference](cli-reference.md); GPU setup is in
+    [Installation](installation.md#transcription-device-gpu-vs-cpu).
 
 ## Where to go next
 
@@ -62,8 +69,12 @@ The recommended loop is **`--dry-run` → read the cut list → render** — see
 
 ### Internals — how the pipeline is shaped, and why
 
-Maintainer-facing design docs. The pipeline runs in this order; each doc covers
-one stage:
+Maintainer-facing design docs. Start with the **[architecture
+overview](architecture.md)** for the end-to-end pipeline map, and keep
+**[concepts & glossary](concepts.md)** handy for the shared vocabulary and the
+signal-processing theory (RMS envelope, silence floor, zero-crossing splicing,
+equal-power crossfades). Then each doc below covers one stage in depth, in
+pipeline order:
 
 - **[Detection](detection.md)** — the four-pass filler pipeline (word-list,
   gap, intra-word, overlong), the shared RMS-envelope substrate, and the
@@ -81,6 +92,6 @@ one stage:
   prompt that makes filler detection possible, and the CUDA → CPU device
   fallback.
 
-For the full flag list and defaults, the
-[README](https://github.com/dougcalobrisi/erm#readme) remains the single source
-of truth for the CLI surface.
+For the full flag list and defaults, see the
+[CLI reference](cli-reference.md) — generated directly from `erm`'s parser, so
+it always matches the installed version.

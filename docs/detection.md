@@ -31,7 +31,9 @@ later (see [render-pipeline.md](render-pipeline.md)).
 The three audio detectors (everything except the word-list match) share one
 primitive: a frame-based RMS energy envelope, `_rms_envelope` in
 `envelope.py:12`. Frames are non-overlapping `win_ms` (10 ms) windows; the
-return is `(envelope, hop_samples)`.
+return is `(envelope, hop_samples)`. For the *why* behind RMS framing and the
+dB-relative threshold below, see
+[Concepts → RMS energy envelope](concepts.md#rms-energy-envelope).
 
 "Voiced" is defined relative to the recording's own loudness, not an absolute
 dB value:

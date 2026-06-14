@@ -40,9 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     mp4 gets AAC 256k, webm gets Opus 160k.
   - `validate` gains an **A/V-sync check** (video outputs only): the picture and
     audio streams must end within ~1 frame of each other.
-  - See the [video render & A/V sync design doc](docs/video-render.md) for the
-    A/V-sync derivation, and [working with video](docs/video.md) for the
-    user-facing guide.
+  - See the [video render & A/V sync design doc](https://github.com/dougcalobrisi/erm/blob/main/docs/video-render.md)
+    for the A/V-sync derivation, and [working with video](https://github.com/dougcalobrisi/erm/blob/main/docs/video.md)
+    for the user-facing guide.
 - **`--add-fillers`** and **`--remove-fillers`** — adjust the pass-1 word list
   relative to the defaults instead of replacing it. `--fillers` still overrides
   the whole set; `--add-fillers "basically,like"` unions words on top of it, and
