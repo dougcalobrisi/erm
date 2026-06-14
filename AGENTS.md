@@ -73,7 +73,9 @@ See [`docs/troubleshooting.md`](docs/troubleshooting.md) (symptom → knob).
 - CLI entry point + all flags: `src/erm/cli.py`
 - Default filler list: `src/erm/fillers.py`
 - Tests: `pytest` (some marked `slow` need the Whisper model download).
-- Packaging: `pyproject.toml`; release via `.github/workflows/release.yml`.
+- Packaging: `pyproject.toml`; release via `.github/workflows/release.yml`
+  (publishes to PyPI, tags, pins `plugin.json`, then auto-bumps `main` to the
+  next dev version — a minor bump by default, or the `next_version` input).
 
 ## Bundled Claude Code / Cowork skills
 
