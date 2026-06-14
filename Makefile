@@ -21,9 +21,13 @@ test:
 test-cov:
 	uv run pytest tests/ -v --cov=src/erm --cov-report=term-missing
 
-# Regenerate docs/cli-reference.md from erm's argparse parsers
+# Regenerate docs/cli-reference.md from erm's argparse parsers.
+# Pinned to Python 3.13 because argparse's --help formatting changed across
+# versions (e.g. 3.13 collapses "-o OUTPUT, --output OUTPUT" to "-o, --output
+# OUTPUT"). The CI drift-guard generates on the same version, so the committed
+# file and CI always agree.
 docs-cli:
-	uv run python scripts/gen_cli_docs.py
+	uv run --python 3.13 python scripts/gen_cli_docs.py
 
 # Remove build/dist artifacts
 clean:

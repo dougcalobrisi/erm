@@ -42,8 +42,7 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
-  -o OUTPUT, --output OUTPUT
-                        Output audio file (.wav).
+  -o, --output OUTPUT   Output audio file (.wav).
   --model MODEL         faster-whisper model (default: large-v3).
   --device {auto,cpu,cuda}
                         Compute device for transcription. 'auto' (default)

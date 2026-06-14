@@ -26,8 +26,10 @@ jobs:
       - name: CLI reference is up to date
         # docs/cli-reference.md is generated from erm's argparse parsers and
         # committed. Regenerate and fail if it drifts from the actual --help.
+        # Pinned to 3.13 (matches `make docs-cli`) because argparse's --help
+        # formatting differs across Python versions.
         run: |
-          uv run python scripts/gen_cli_docs.py
+          uv run --python 3.13 python scripts/gen_cli_docs.py
           if ! git diff --exit-code docs/cli-reference.md; then
             echo "::error file=docs/cli-reference.md::docs/cli-reference.md is stale. Run 'make docs-cli' and commit the result."
             exit 1
