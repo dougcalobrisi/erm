@@ -24,7 +24,7 @@ ran it via uv, or plain `erm …` after activating the venv where it's installed
 Resolve detail in this order (broadest compatibility last):
 
 1. **`erm --help`** — definitive flag names, defaults, and units.
-2. **Public docs:** https://dougcalobrisi.github.io/erm/ — `troubleshooting`,
+2. **Public docs:** https://doug.sh/docs/erm/ — `troubleshooting`,
    `detection`, `render-pipeline`, `denoise-and-room-tone`.
 3. **Bundled docs** (Claude plugin only): `${CLAUDE_PLUGIN_ROOT}/docs/*.md`;
    flag defaults in `${CLAUDE_PLUGIN_ROOT}/src/erm/cli.py`.

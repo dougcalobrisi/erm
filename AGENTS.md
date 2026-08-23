@@ -5,7 +5,7 @@
 file orients any AI coding agent (Codex, Copilot, OpenCode, Cursor, Gemini CLI,
 pi.dev, Claude Code, …) working with the tool.
 
-> Full docs: https://dougcalobrisi.github.io/erm/ — source in [`docs/`](docs/index.md).
+> Full docs: https://doug.sh/docs/erm/ — source in [`docs/`](docs/index.md).
 > Always confirm exact flags with `erm --help`; never guess flag names or defaults.
 
 ## Install

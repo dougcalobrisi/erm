@@ -1,7 +1,7 @@
 site_name: erm
 site_description: Strip disfluencies (um, uh, er, ah, hmm) from spoken audio.
 site_author: Doug Calobrisi
-site_url: https://dougcalobrisi.github.io/erm/
+site_url: https://doug.sh/docs/erm/
 
 repo_name: dougcalobrisi/erm
 repo_url: https://github.com/dougcalobrisi/erm
