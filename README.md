@@ -1,6 +1,6 @@
 # erm
 
-[![Docs](https://img.shields.io/badge/docs-erm-blue)](https://dougcalobrisi.github.io/erm/)
+[![Docs](https://img.shields.io/badge/docs-erm-blue)](https://doug.sh/docs/erm/)
 
 Local CLI that strips disfluencies (`um`, `uh`, `er`, `erm`, `ah`, `hmm`, `mhm`,
 `mm`, `uh-huh`, plus any-length elongations like `ummmm` / `uhhhhh`) from
@@ -14,7 +14,7 @@ minimum and zero-crossing, optionally crossfaded with a length that scales
 with the cut size, and laid over a constant looped sample of the recording's
 own room tone so the noise floor stays uniform across edits.
 
-> **Full docs at [dougcalobrisi.github.io/erm](https://dougcalobrisi.github.io/erm/)**
+> **Full docs at [doug.sh/docs/erm](https://doug.sh/docs/erm/)**
 > (source in [`docs/`](docs/index.md)): usage guides for getting good
 > results — [tuning & workflow](docs/usage.md), [recipes](docs/recipes.md),
 > [troubleshooting](docs/troubleshooting.md) — plus maintainer-facing design docs

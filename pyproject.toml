@@ -35,7 +35,7 @@ docs = ["mkdocs-material>=9.5"]
 [project.urls]
 Homepage = "https://github.com/dougcalobrisi/erm"
 Repository = "https://github.com/dougcalobrisi/erm"
-Documentation = "https://dougcalobrisi.github.io/erm/"
+Documentation = "https://doug.sh/docs/erm/"
 Issues = "https://github.com/dougcalobrisi/erm/issues"
 
 [project.scripts]

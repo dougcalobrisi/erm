@@ -22,7 +22,7 @@ When you need authoritative detail, resolve it in this order (each works in more
 environments than the last):
 
 1. **`erm --help`** and **`erm validate --help`** — definitive flags and defaults; works once installed.
-2. **Public docs:** https://dougcalobrisi.github.io/erm/ — `usage`, `recipes`, `troubleshooting`, etc.
+2. **Public docs:** https://doug.sh/docs/erm/ — `usage`, `recipes`, `troubleshooting`, etc.
 3. **Bundled docs** (Claude Code/Cowork plugin only): `${CLAUDE_PLUGIN_ROOT}/docs/*.md` and the
    source of truth for flag defaults, `${CLAUDE_PLUGIN_ROOT}/src/erm/cli.py`.
 
